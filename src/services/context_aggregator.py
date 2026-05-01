@@ -63,12 +63,43 @@ class ContextAggregator:
         }
 
     async def fetch_news_data(self, asset: str) -> list:
-        """Fetch headlines (Requires NEWS_API_KEY)"""
-        api_key = os.getenv("NEWS_API_KEY")
-        if api_key and api_key != "your_news_api_key_here":
-            # Real implementation using NewsAPI/Alpha Vantage would go here
-            pass
+        """Fetch live headlines and sentiment from Alpha Vantage."""
+        av_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+        
+        if av_key and av_key != "your_alpha_vantage_key_here":
+            try:
+                # Alpha Vantage News & Sentiment endpoint
+                # We filter by tickers (e.g., CRYPTO:BTC or just BTC)
+                ticker = f"CRYPTO:{asset}" if asset in ["BTC", "ETH"] else asset
+                url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={ticker}&apikey={av_key}"
+                
+                async with self.session.get(url) as response:
+                    data = await response.json()
+                    feed = data.get("feed", [])
+                    
+                    results = []
+                    for item in feed[:5]: # Take top 5 latest news
+                        # Map Alpha Vantage sentiment labels to scores if needed, 
+                        # but they already provide a 'ticker_sentiment_score'
+                        ticker_sentiment = 0.5
+                        for t in item.get("ticker_sentiment", []):
+                            if t.get("ticker") == asset:
+                                ticker_sentiment = float(t.get("ticker_sentiment_score", 0.5))
+                                break
+                        
+                        results.append({
+                            "headline": item.get("title"),
+                            "sentiment": (ticker_sentiment + 1) / 2, # Normalize -1 to 1 into 0 to 1
+                            "url": item.get("url"),
+                            "source": item.get("source")
+                        })
+                    
+                    if results:
+                        return results
+            except Exception as e:
+                print(f"Error fetching Alpha Vantage news: {e}")
 
+        # Fallback to mock
         await asyncio.sleep(0.2)
         return [
             {"headline": "BTC ETFs see record inflows", "sentiment": 0.8},

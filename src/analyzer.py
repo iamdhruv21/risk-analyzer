@@ -1,6 +1,6 @@
 import json
 import asyncio
-from src.models.signal import TradeSignal, RiskContext
+from src.models.signal import TradeSignal, RiskContext, RiskAnalysisReport
 from src.services.context_aggregator import ContextAggregator
 from src.services.rule_engine import RuleEngine
 from src.services.decision_gate import DecisionGate
@@ -9,6 +9,7 @@ from src.agents.sentiment_agent import SentimentAgent
 from src.agents.metrics_agent import MetricsAgent
 from src.agents.volatility_agent import VolatilityAgent
 from src.agents.synthesis_agent import RiskSynthesisAgent
+from src.services.audit_logger import AuditLogger
 
 class RiskAnalyzer:
     def __init__(self):
@@ -16,24 +17,24 @@ class RiskAnalyzer:
         self.rule_engine = RuleEngine()
         self.decision_gate = DecisionGate()
         
-        # Initialize Layer 3 Agents
         self.tech_agent = TechnicalAgent()
         self.sent_agent = SentimentAgent()
         self.metrics_agent = MetricsAgent()
         self.vol_agent = VolatilityAgent()
 
-        # Initialize Layer 4 Agent
         self.synthesis_agent = RiskSynthesisAgent()
+        self.audit_logger = AuditLogger()
 
     async def analyze(self, result_json: dict):
         """
-        Orchestrates the Risk Analysis pipeline.
+        Orchestrates the full 6-Layer Risk Analysis pipeline.
         - Layer 0: Signal Validation
         - Layer 1: Context Aggregation
         - Layer 2: Fast Rule Engine
         - Layer 3: Specialized Sub-Agents
         - Layer 4: LLM Orchestration
         - Layer 5: Decision Gate
+        - Layer 6: Structured Output & Audit Logging
         """
         # Layer 0: Signal Validation
         print(f"--- Layer 0: Validating Signal ---")
@@ -65,8 +66,6 @@ class RiskAnalyzer:
 
         # Layer 3: Specialized Sub-Agents
         print(f"\n--- Layer 3: Executing Specialized Agents ---")
-        # Running agents in parallel
-        # Note: Since they are currently CPU-bound, we use to_thread
         agent_tasks = [
             asyncio.to_thread(self.tech_agent.analyze, signal, context),
             asyncio.to_thread(self.sent_agent.analyze, signal, context),
@@ -97,19 +96,25 @@ class RiskAnalyzer:
         print(f"\n--- Layer 5: Decision Gate ---")
         final_decision = self.decision_gate.make_final_decision(composite_score, metrics)
         
-        # Merge LLM adjustments if any
-        if "suggested_adjustments" in synthesis_report:
-            final_decision["suggested_adjustments"] = synthesis_report["suggested_adjustments"]
+        # Layer 6: Structured Output & Audit Logging
+        print(f"--- Layer 6: Finalizing Audit ---")
         
-        return {
-            "signal": signal.model_dump(),
-            "context": context.model_dump(),
-            "metrics": metrics,
-            "agent_reports": reports,
-            "synthesis": synthesis_report,
-            "analysis": final_decision,
-            "status": "PHASE_4_COMPLETE"
-        }
+        report = RiskAnalysisReport(
+            signal=signal,
+            context=context,
+            metrics=metrics,
+            agent_reports=reports,
+            synthesis=synthesis_report,
+            decision=final_decision["decision"],
+            composite_score=composite_score,
+            rationale=final_decision["rationale"],
+            suggested_adjustments=synthesis_report.get("suggested_adjustments")
+        )
+
+        # Persist decision
+        await self.audit_logger.log_decision(report)
+        
+        return report.model_dump()
 
 async def run_example(result_json):
     analyzer = RiskAnalyzer()

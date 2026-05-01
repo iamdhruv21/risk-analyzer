@@ -34,3 +34,17 @@ class RiskContext(BaseModel):
     economic_calendar: list = []
     portfolio_state: dict = {}
     sentiment: dict = {}
+
+class RiskAnalysisReport(BaseModel):
+    """Layer 6: Final Structured Output"""
+    signal: TradeSignal
+    context: RiskContext
+    metrics: dict
+    agent_reports: dict
+    synthesis: dict
+    decision: str
+    composite_score: float
+    rationale: str
+    suggested_adjustments: Optional[dict] = None
+    status: str = "COMPLETE"
+    timestamp: str = Field(default_factory=lambda: "2026-05-01T12:00:00Z") # Mocked timestamp
