@@ -8,6 +8,7 @@ from src.agents.technical_agent import TechnicalAgent
 from src.agents.sentiment_agent import SentimentAgent
 from src.agents.metrics_agent import MetricsAgent
 from src.agents.volatility_agent import VolatilityAgent
+from src.agents.synthesis_agent import RiskSynthesisAgent
 
 class RiskAnalyzer:
     def __init__(self):
@@ -21,6 +22,9 @@ class RiskAnalyzer:
         self.metrics_agent = MetricsAgent()
         self.vol_agent = VolatilityAgent()
 
+        # Initialize Layer 4 Agent
+        self.synthesis_agent = RiskSynthesisAgent()
+
     async def analyze(self, result_json: dict):
         """
         Orchestrates the Risk Analysis pipeline.
@@ -28,7 +32,7 @@ class RiskAnalyzer:
         - Layer 1: Context Aggregation
         - Layer 2: Fast Rule Engine
         - Layer 3: Specialized Sub-Agents
-        - [PHASE 4]: LLM Orchestration (Mocked for now)
+        - Layer 4: LLM Orchestration
         - Layer 5: Decision Gate
         """
         # Layer 0: Signal Validation
@@ -83,31 +87,34 @@ class RiskAnalyzer:
             reasoning = report.get('reasoning', report.get('reason', 'No reasoning provided'))
             print(f"Agent {name.capitalize()}: Score {report['score']} - {reasoning[:50]}...")
 
-        # Phase 4: (Mocked until implemented)
-        # In Phase 4, an LLM will synthesize these reports.
-        # For now, we calculate a simple weighted average score.
-        print(f"\n--- Phase 4: Synthesis (Simple Weighted Avg) ---")
-        weights = {"technical": 0.3, "metrics": 0.3, "volatility": 0.25, "sentiment": 0.15}
-        composite_score = sum(reports[k]["score"] * weights[k] for k in weights)
-        print(f"Composite Score: {composite_score:.2f}")
+        # Layer 4: LLM Orchestration
+        print(f"\n--- Layer 4: LLM Synthesis ---")
+        synthesis_report = await self.synthesis_agent.synthesize(signal, reports)
+        composite_score = synthesis_report.get("composite_score", 50)
+        print(f"Composite Score: {composite_score} - Rationale: {synthesis_report.get('rationale', '')[:100]}...")
 
         # Layer 5: Decision Gate (Final Override)
-        print(f"--- Layer 5: Decision Gate ---")
+        print(f"\n--- Layer 5: Decision Gate ---")
         final_decision = self.decision_gate.make_final_decision(composite_score, metrics)
+        
+        # Merge LLM adjustments if any
+        if "suggested_adjustments" in synthesis_report:
+            final_decision["suggested_adjustments"] = synthesis_report["suggested_adjustments"]
         
         return {
             "signal": signal.model_dump(),
             "context": context.model_dump(),
             "metrics": metrics,
             "agent_reports": reports,
+            "synthesis": synthesis_report,
             "analysis": final_decision,
-            "status": "PHASE_3_COMPLETE"
+            "status": "PHASE_4_COMPLETE"
         }
 
 async def run_example(result_json):
     analyzer = RiskAnalyzer()
     analysis_result = await analyzer.analyze(result_json)
-    print("\n--- Final Output (Phase 1) ---")
+    print("\n--- Final Output ---")
     print(json.dumps(analysis_result, indent=2))
 
 if __name__ == "__main__":
