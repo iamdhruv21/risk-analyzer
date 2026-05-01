@@ -4,12 +4,22 @@ from src.models.signal import TradeSignal, RiskContext
 from src.services.context_aggregator import ContextAggregator
 from src.services.rule_engine import RuleEngine
 from src.services.decision_gate import DecisionGate
+from src.agents.technical_agent import TechnicalAgent
+from src.agents.sentiment_agent import SentimentAgent
+from src.agents.metrics_agent import MetricsAgent
+from src.agents.volatility_agent import VolatilityAgent
 
 class RiskAnalyzer:
     def __init__(self):
         self.aggregator = ContextAggregator()
         self.rule_engine = RuleEngine()
         self.decision_gate = DecisionGate()
+        
+        # Initialize Layer 3 Agents
+        self.tech_agent = TechnicalAgent()
+        self.sent_agent = SentimentAgent()
+        self.metrics_agent = MetricsAgent()
+        self.vol_agent = VolatilityAgent()
 
     async def analyze(self, result_json: dict):
         """
@@ -17,7 +27,8 @@ class RiskAnalyzer:
         - Layer 0: Signal Validation
         - Layer 1: Context Aggregation
         - Layer 2: Fast Rule Engine
-        - [PHASE 3/4]: Agents & LLM (Mocked for now)
+        - Layer 3: Specialized Sub-Agents
+        - [PHASE 4]: LLM Orchestration (Mocked for now)
         - Layer 5: Decision Gate
         """
         # Layer 0: Signal Validation
@@ -46,22 +57,51 @@ class RiskAnalyzer:
             }
         
         metrics = rule_results["metrics"]
-        print(f"Fast rules passed. R:R: {metrics['rr_ratio']}, Position Size: {metrics['suggested_position_size']}")
+        print(f"Fast rules passed. R:R: {metrics['rr_ratio']}")
 
-        # Phase 3 & 4: (Mocked until implemented)
-        print(f"\n--- Phase 3 & 4: (Placeholder for Agents & LLM) ---")
-        mock_composite_score = 80 # Placeholder for Phase 4 output
+        # Layer 3: Specialized Sub-Agents
+        print(f"\n--- Layer 3: Executing Specialized Agents ---")
+        # Running agents in parallel
+        # Note: Since they are currently CPU-bound, we use to_thread
+        agent_tasks = [
+            asyncio.to_thread(self.tech_agent.analyze, signal, context),
+            asyncio.to_thread(self.sent_agent.analyze, signal, context),
+            asyncio.to_thread(self.metrics_agent.analyze, signal, context),
+            asyncio.to_thread(self.vol_agent.analyze, signal, context)
+        ]
+        
+        agent_results = await asyncio.gather(*agent_tasks)
+        
+        reports = {
+            "technical": agent_results[0],
+            "sentiment": agent_results[1],
+            "metrics": agent_results[2],
+            "volatility": agent_results[3]
+        }
+        
+        for name, report in reports.items():
+            reasoning = report.get('reasoning', report.get('reason', 'No reasoning provided'))
+            print(f"Agent {name.capitalize()}: Score {report['score']} - {reasoning[:50]}...")
+
+        # Phase 4: (Mocked until implemented)
+        # In Phase 4, an LLM will synthesize these reports.
+        # For now, we calculate a simple weighted average score.
+        print(f"\n--- Phase 4: Synthesis (Simple Weighted Avg) ---")
+        weights = {"technical": 0.3, "metrics": 0.3, "volatility": 0.25, "sentiment": 0.15}
+        composite_score = sum(reports[k]["score"] * weights[k] for k in weights)
+        print(f"Composite Score: {composite_score:.2f}")
 
         # Layer 5: Decision Gate (Final Override)
         print(f"--- Layer 5: Decision Gate ---")
-        final_decision = self.decision_gate.make_final_decision(mock_composite_score, metrics)
+        final_decision = self.decision_gate.make_final_decision(composite_score, metrics)
         
         return {
             "signal": signal.model_dump(),
             "context": context.model_dump(),
             "metrics": metrics,
+            "agent_reports": reports,
             "analysis": final_decision,
-            "status": "PHASE_2_COMPLETE"
+            "status": "PHASE_3_COMPLETE"
         }
 
 async def run_example(result_json):
