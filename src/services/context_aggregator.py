@@ -1,34 +1,74 @@
+import os
 import asyncio
 import aiohttp
+import ccxt.async_support as ccxt
 from typing import Dict, Any
+from dotenv import load_dotenv
 from src.models.signal import TradeSignal, RiskContext
+
+# Load environment variables from .env
+load_dotenv()
 
 class ContextAggregator:
     def __init__(self):
-        # In a real scenario, API keys would be loaded here from env
         self.session = None
+        self.binance_key = os.getenv("BINANCE_API_KEY")
+        self.binance_secret = os.getenv("BINANCE_API_SECRET")
+        self.exchange = None
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
+        # Initialize CCXT Binance
+        self.exchange = ccxt.binance({
+            'apiKey': self.binance_key,
+            'secret': self.binance_secret,
+            'enableRateLimit': True,
+        })
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
+        if self.exchange:
+            await self.exchange.close()
 
     async def fetch_market_data(self, asset: str) -> Dict[str, Any]:
-        """Fetch real-time price, candles, and order book depth"""
-        # Mocking async fetch
+        """Fetch live market data from Binance if keys are provided, otherwise fallback to mock."""
+        if self.exchange and self.binance_key != "your_api_key_here":
+            try:
+                symbol = f"{asset}/USDT"
+                ticker = await self.exchange.fetch_ticker(symbol)
+                ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe='1h', limit=20)
+                
+                return {
+                    "current_price": ticker['last'],
+                    "high_24h": ticker['high'],
+                    "low_24h": ticker['low'],
+                    "volume_24h": ticker['baseVolume'],
+                    "ohlcv": ohlcv,
+                    "source": "live_binance"
+                }
+            except Exception as e:
+                print(f"Error fetching live Binance data: {e}")
+                # Fallback to mock logic below
+
+        # Mocking async fetch (Fallback)
         await asyncio.sleep(0.1)
         return {
             "current_price": 65200.0,
             "atr_14": 1200.5,
             "volume_24h": 500000000,
-            "ohlcv": [] # last 200 candles would be here
+            "ohlcv": [],
+            "source": "mock"
         }
 
     async def fetch_news_data(self, asset: str) -> list:
-        """Fetch last 24h headlines for the asset"""
+        """Fetch headlines (Requires NEWS_API_KEY)"""
+        api_key = os.getenv("NEWS_API_KEY")
+        if api_key and api_key != "your_news_api_key_here":
+            # Real implementation using NewsAPI/Alpha Vantage would go here
+            pass
+
         await asyncio.sleep(0.2)
         return [
             {"headline": "BTC ETFs see record inflows", "sentiment": 0.8},
@@ -43,13 +83,27 @@ class ContextAggregator:
         ]
 
     async def fetch_portfolio_state(self) -> Dict[str, Any]:
-        """Fetch current positions and account equity"""
+        """Fetch live account balance from Binance if keys are provided."""
+        if self.exchange and self.binance_key != "your_api_key_here":
+            try:
+                balance = await self.exchange.fetch_balance()
+                # Simplified: Get USDT equity
+                usdt_balance = balance.get('USDT', {})
+                return {
+                    "equity": usdt_balance.get('total', 0.0),
+                    "free": usdt_balance.get('free', 0.0),
+                    "source": "live_binance"
+                }
+            except Exception as e:
+                print(f"Error fetching Binance balance: {e}")
+
         await asyncio.sleep(0.05)
         return {
             "equity": 10000.0,
             "balance": 9500.0,
             "open_positions": [],
-            "daily_drawdown": 0.02
+            "daily_drawdown": 0.02,
+            "source": "mock"
         }
 
     async def fetch_sentiment_data(self) -> Dict[str, Any]:
