@@ -3,7 +3,7 @@ from typing import Dict, Any, Literal
 class DecisionGate:
     def __init__(self):
         # Minimum RR that even an LLM score cannot override
-        self.HARD_MIN_RR = 1.2
+        self.HARD_MIN_RR = 1.5
 
     def make_final_decision(self, composite_score: float, metrics: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -19,7 +19,16 @@ class DecisionGate:
                 "rationale": f"Hard override: Risk/Reward ratio {rr_ratio} is below absolute floor of {self.HARD_MIN_RR}."
             }
 
-        # 2. Score-based mapping
+        # 2. Handle null composite score
+        if composite_score is None:
+            return {
+                "decision": "REJECT",
+                "composite_score": None,
+                "rationale": "Unable to calculate composite score. Insufficient data for risk assessment."
+            }
+
+        # 3. Score-based mapping
+        # todo: work on this logic to calculate sore
         if composite_score >= 75:
             decision = "APPROVE"
         elif 50 <= composite_score < 75:

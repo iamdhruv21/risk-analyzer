@@ -138,10 +138,13 @@ class ContextAggregator:
         }
 
     async def fetch_sentiment_data(self) -> Dict[str, Any]:
-        """Fetch Fear/Greed index, VIX, etc."""
+        """Fetch Fear/Greed index, MMI, VIX, etc."""
         await asyncio.sleep(0.1)
         return {
             "fear_greed_index": 65,
+            "mmi": 55.5, # Market Movement Insight (0-100)
+            "vix": 15.2,
+            "india_vix": 12.8,
             "market_regime": "bullish_expansion"
         }
 

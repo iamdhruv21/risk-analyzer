@@ -43,7 +43,7 @@ class RiskAnalysisReport(BaseModel):
     agent_reports: dict
     synthesis: dict
     decision: str
-    composite_score: float
+    composite_score: Optional[float] = None
     rationale: str
     suggested_adjustments: Optional[dict] = None
     status: str = "COMPLETE"
