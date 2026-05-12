@@ -1,0 +1,4 @@
+BTC Buy 65000
+TP 68000
+SL 63500
+Leverage 10x

@@ -1,616 +1,90 @@
 # Argus Risk Analysis System
 
-A production-ready, multi-layered AI-powered risk analysis system for evaluating trade signals across crypto, forex, stocks, and commodities. Built with a microservices-inspired architecture using specialized agents and deterministic rule gates.
+Production-ready AI-powered risk analysis for trading signals with Human-in-the-Loop reinforcement learning.
 
-## Overview
+## Quick Start
 
-Argus Risk Analysis processes incoming trade signals through a 6-layer pipeline that combines deterministic rules, real-time market data, specialized AI agents, and LLM-based synthesis to produce actionable risk assessments.
+### 1. Install
 
-**Key Features:**
-- Multi-layer risk validation (fast rules → specialized agents → LLM synthesis)
-- Real-time market data integration (Binance, Alpha Vantage)
-- Specialized agents for technical analysis, sentiment, metrics, and volatility
-- LLM-powered risk synthesis using Claude
-- Comprehensive audit logging for all decisions
-- Production-ready with strict data validation and error handling
+```bash
+# Install UV (if not installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-## Architecture
-
-### 6-Layer Pipeline
-
-```
-Layer 0: Signal Validation
-    ↓
-Layer 1: Context Aggregation (Market Data, News, Sentiment)
-    ↓
-Layer 2: Fast Rule Engine (Deterministic Gates)
-    ↓
-Layer 3: Specialized Sub-Agents (Parallel Analysis)
-    ↓
-Layer 4: LLM Orchestration (Risk Synthesis)
-    ↓
-Layer 5: Decision Gate (Final Override)
-    ↓
-Layer 6: Structured Output & Audit Logging
+# Install dependencies
+uv sync
 ```
 
-### Layer Details
+### 2. Configure
 
-#### **Layer 0: Signal Validation**
-Validates incoming trade signals using Pydantic models. Ensures all required fields (asset, type, price, tp, sl, leverage) are present and within acceptable ranges.
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+```
 
-**File:** `src/models/signal.py`
+### 3. Run Pipeline
 
-#### **Layer 1: Context Aggregation**
-Fetches real-time data from multiple sources in parallel:
-- Market data (OHLCV, price, volume) from Binance
-- News sentiment from Alpha Vantage
-- Economic calendar events
-- Portfolio state (account balance, positions)
-- Sentiment indicators (Fear & Greed, MMI, VIX)
+```bash
+# Process signals from text file
+uv run python pipeline.py ../signal-parsing/signals.txt
 
-**File:** `src/services/context_aggregator.py`
+# Interactive mode
+uv run python pipeline.py --interactive
+```
 
-**Important:** Returns `None` for any data source that is unavailable. No mock data in production.
+### 4. Provide Feedback
 
-#### **Layer 2: Fast Rule Engine**
-Deterministic gates that reject trades immediately if they violate hard constraints:
-- Minimum R:R ratio (1.5x)
-- Maximum leverage limits (10x for crypto, 50x for forex)
-- Daily drawdown caps
-- Stop loss distance validation (ATR-based)
+```bash
+# After trade execution
+uv run python feedback_cli.py <trade_id>
 
-**File:** `src/services/rule_engine.py`
+# View statistics
+uv run python feedback_query.py summary
+```
 
-#### **Layer 3: Specialized Sub-Agents**
-Four specialized agents run in parallel, each analyzing different aspects:
+## Features
 
-1. **Technical Agent** (`src/agents/technical_agent.py`)
-   - RSI, EMA, ADX indicators
-   - Trend alignment analysis
-   - Requires OHLCV data (minimum 14 bars)
+- **Integrated Signal Parser** - Waterfall approach (Fast regex → LLM fallback)
+- **6-Layer Risk Analysis** - Validation → Context → Rules → Agents → Synthesis → Decision
+- **Real-time Market Data** - Binance, Alpha Vantage integration
+- **Specialized AI Agents** - Technical, Sentiment, Metrics, Volatility
+- **LLM-Powered Synthesis** - Claude-based risk assessment
+- **HITL Feedback System** - Continuous learning from human experts
+- **Production-Ready** - No mock data, proper error handling, audit trails
 
-2. **Sentiment Agent** (`src/agents/sentiment_agent.py`)
-   - News sentiment analysis with inverse correlation detection
-   - Fear & Greed Index (contrarian signals)
-   - MMI (Market Movement Insight)
-   - Market regime alignment
-   - High-impact event detection
+## Documentation
 
-3. **Metrics Agent** (`src/agents/metrics_agent.py`)
-   - R:R ratio validation
-   - Liquidation risk calculation
-   - Position sizing recommendations
+- [Complete Documentation](.agent/README.md) - Full system guide
+- [Pipeline Guide](.agent/PIPELINE_GUIDE.md) - Text-to-analysis workflow
+- [Parser Implementation](.agent/PARSER_IMPLEMENTATION.md) - Signal parsing details
+- [HITL Guide](.agent/HITL_GUIDE.md) - Feedback system usage
+- [Implementation Summary](.agent/IMPLEMENTATION_SUMMARY.md) - Development details
 
-4. **Volatility Agent** (`src/agents/volatility_agent.py`)
-   - VIX analysis (global volatility)
-   - India VIX (for Indian market assets)
-   - ATR-based stop loss validation
-   - Market regime analysis
+## Workflow
 
-Each agent returns a score (0-100) and reasoning. If critical data is unavailable, agents return `score: None`.
-
-#### **Layer 4: LLM Orchestration (Risk Synthesis)**
-Claude-powered synthesis engine that aggregates all agent reports into a unified risk assessment.
-
-**File:** `src/agents/synthesis_agent.py`
-
-**Behavior:**
-- If Anthropic API key is configured: Uses Claude to synthesize reports
-- If API key missing: Falls back to weighted average (Technical: 30%, Metrics: 30%, Volatility: 25%, Sentiment: 15%)
-- Returns `composite_score: None` if any agent has invalid/missing scores
-
-**Model:** `claude-3-5-sonnet-20241022`
-
-#### **Layer 5: Decision Gate**
-Maps composite scores to discrete actions with hard overrides:
-
-| Score Range | Decision | Description |
-|-------------|----------|-------------|
-| 75-100 | APPROVE | High confidence, all indicators aligned |
-| 50-74 | ADJUST | Moderate confidence, consider position size reduction |
-| 30-49 | FLAG | Low confidence, requires manual review |
-| 0-29 | REJECT | Very low confidence, too risky to execute |
-
-**Hard Overrides:**
-- R:R ratio below 1.5x → immediate REJECT
-- Composite score is `None` → immediate REJECT
-
-**File:** `src/services/decision_gate.py`
-
-#### **Layer 6: Audit Logging**
-Persists all decisions to JSONL file with full context for reproducibility.
-
-**File:** `src/services/audit_logger.py`
-**Output:** `audit_log.jsonl`
+```
+Text Signal → Parse → Convert → Analyze → Decision → Execute → Feedback → Learn
+```
 
 ## Project Structure
 
 ```
-risk-analysis/
-├── src/
-│   ├── analyzer.py                    # Main orchestrator
-│   ├── models/
-│   │   ├── signal.py                  # Pydantic models (TradeSignal, RiskContext, RiskAnalysisReport)
-│   │   └── feedback.py                # HITL feedback models
-│   ├── services/
-│   │   ├── context_aggregator.py      # Layer 1: Data fetching
-│   │   ├── rule_engine.py             # Layer 2: Fast rules
-│   │   ├── decision_gate.py           # Layer 5: Final decision
-│   │   ├── audit_logger.py            # Layer 6: Logging
-│   │   └── feedback_collector.py      # HITL feedback management
-│   └── agents/
-│       ├── technical_agent.py         # Layer 3: Technical analysis
-│       ├── sentiment_agent.py         # Layer 3: Sentiment analysis
-│       ├── metrics_agent.py           # Layer 3: Risk metrics
-│       ├── volatility_agent.py        # Layer 3: Volatility analysis
-│       └── synthesis_agent.py         # Layer 4: LLM synthesis
-├── main.py                            # Entry point
-├── feedback_cli.py                    # Interactive feedback submission
-├── feedback_query.py                  # Query and analyze feedback
-├── .env                               # API keys configuration
-├── pyproject.toml                     # Dependencies
-├── audit_log.jsonl                    # Decision audit trail
-└── feedback_log.jsonl                 # Human feedback (HITL)
+├── src/                    # Core system
+│   ├── analyzer.py         # Main orchestrator
+│   ├── agents/             # Specialized agents
+│   ├── services/           # Core services
+│   └── utils/              # Signal adapter
+├── pipeline.py             # End-to-end pipeline
+├── feedback_cli.py         # Feedback submission
+├── feedback_query.py       # Feedback analytics
+├── .agent/                 # Documentation
+└── .env                    # Configuration
 ```
 
-## Installation
+## Requirements
 
-### Prerequisites
 - Python 3.12+
-- UV package manager (recommended) or pip
-
-### Setup
-
-1. Clone the repository:
-```bash
-cd /var/www/Projects/Argus/risk-analysis
-```
-
-2. Install dependencies:
-```bash
-uv sync
-```
-
-Or with pip:
-```bash
-pip install -r requirements.txt
-```
-
-3. Configure environment variables:
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and add your API keys:
-```env
-# Required for market data
-BINANCE_API_KEY=your_binance_api_key
-BINANCE_API_SECRET=your_binance_api_secret
-
-# Required for news sentiment
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key
-
-# Required for LLM synthesis (optional fallback to weighted average)
-ANTHROPIC_API_KEY=your_anthropic_key
-```
-
-## Configuration
-
-### API Keys
-
-| Service | Required | Purpose | Get Key |
-|---------|----------|---------|---------|
-| Binance | Yes | Market data, portfolio state | [binance.com/api-management](https://www.binance.com/api-management) |
-| Alpha Vantage | Yes | News sentiment | [alphavantage.co/support/#api-key](https://www.alphavantage.co/support/#api-key) |
-| Anthropic | Optional | LLM synthesis (falls back to weighted average) | [console.anthropic.com](https://console.anthropic.com) |
-
-### Risk Parameters
-
-Edit thresholds in:
-- `src/services/rule_engine.py` - Hard rule limits (R:R, leverage, drawdown)
-- `src/services/decision_gate.py` - Score-to-decision mapping
-- `src/agents/synthesis_agent.py` - Agent weighting (if no LLM)
-
-## Usage
-
-### Basic Example
-
-```python
-import asyncio
-from src.analyzer import RiskAnalyzer
-
-async def analyze_trade():
-    analyzer = RiskAnalyzer()
-    
-    signal = {
-        "asset": "BTC",
-        "assetClass": "crypto",
-        "type": "BUY",
-        "price": 65000,
-        "tp": 68000,
-        "sl": 63500,
-        "leverage": 10
-    }
-    
-    result = await analyzer.analyze(signal)
-    print(result)
-
-asyncio.run(analyze_trade())
-```
-
-### Running the Example
-
-```bash
-python main.py
-```
-
-### Sample Output
-
-```json
-{
-  "signal": {
-    "asset": "BTC",
-    "type": "BUY",
-    "price": 65000,
-    "tp": 68000,
-    "sl": 63500,
-    "leverage": 10
-  },
-  "decision": "APPROVE",
-  "composite_score": 78.5,
-  "rationale": "Strong technical alignment with bullish trend, acceptable R:R ratio (1.67x), moderate volatility environment. All agents in agreement.",
-  "metrics": {
-    "rr_ratio": 1.67,
-    "liquidation_risk": "low"
-  },
-  "agent_reports": {
-    "technical": {"score": 80, "reasoning": "..."},
-    "sentiment": {"score": 75, "reasoning": "..."},
-    "metrics": {"score": 70, "reasoning": "..."},
-    "volatility": {"score": 85, "reasoning": "..."}
-  },
-  "suggested_adjustments": {
-    "leverage": 8,
-    "position_size_multiplier": 0.8
-  }
-}
-```
-
-## Error Handling
-
-### Missing Data Behavior
-
-The system follows strict production guidelines:
-- **No mock data**: All data sources return `None` when unavailable
-- **Fail fast**: Agents return `score: None` if critical data is missing
-- **Automatic rejection**: Trades with insufficient data are rejected at Layer 4/5
-
-### Common Scenarios
-
-1. **Binance API keys not configured**
-   - Market data returns `None`
-   - Technical agent returns `score: None`
-   - Trade rejected: "Insufficient data for risk assessment"
-
-2. **Alpha Vantage API key missing**
-   - News data returns `None`
-   - Sentiment agent may still function with other sentiment sources
-   - If all sentiment sources unavailable, agent returns `score: None`
-
-3. **Anthropic API key missing**
-   - Synthesis falls back to weighted average
-   - Warning added to output: "LLM Synthesis skipped - API key not configured"
-   - Trade still processed if all agent scores are valid
-
-## Development
-
-### Adding a New Agent
-
-1. Create file in `src/agents/your_agent.py`
-2. Implement `analyze(signal, context)` method
-3. Return `{"score": 0-100, "reasoning": "...", ...}`
-4. Add to `src/analyzer.py` agent execution
-5. Update synthesis weights if using fallback mode
-
-### Testing
-
-```bash
-# Run with example signal
-python main.py
-
-# Check audit logs
-tail -n 1 audit_log.jsonl | jq
-```
-
-### Debugging
-
-Enable verbose output:
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
-## Production Deployment
-
-### Checklist
-
-- [ ] All API keys configured in `.env`
-- [ ] Verify Binance API permissions (read-only for portfolio, trading disabled)
-- [ ] Test with live data (not paper trading keys)
-- [ ] Set up monitoring for `audit_log.jsonl`
-- [ ] Configure log rotation
-- [ ] Set up alerting for REJECT decisions
-- [ ] Review and adjust risk thresholds per trading strategy
-
-### Security
-
-- Never commit `.env` file
-- Use read-only API keys where possible
-- Rotate API keys regularly
-- Monitor audit logs for suspicious activity
-- Run in isolated environment with network restrictions
-
-### Performance
-
-- Average latency: ~2-3 seconds per trade analysis
-- Bottleneck: External API calls (Binance, Alpha Vantage)
-- Optimization: Consider caching market data for high-frequency analysis
-- Scaling: Run multiple instances with load balancer
-
-## Dependencies
-
-Core libraries:
-- `anthropic` - Claude LLM integration
-- `ccxt` - Crypto exchange API wrapper
-- `aiohttp` - Async HTTP client
-- `pandas` - Data analysis
-- `pandas-ta` - Technical indicators
-- `pydantic` - Data validation
-- `python-dotenv` - Environment configuration
-
-See `pyproject.toml` for complete list.
-
-## Audit Trail
-
-All decisions are logged to `audit_log.jsonl` with:
-- Complete signal details
-- All context data (market, news, sentiment)
-- Agent scores and reasoning
-- Composite score and LLM rationale
-- Final decision and suggested adjustments
-- Timestamp
-
-Format: One JSON object per line (JSONL)
-
-### Querying Audit Logs
-
-```bash
-# Last 10 decisions
-tail -n 10 audit_log.jsonl | jq -r '.decision'
-
-# All REJECT decisions
-grep '"decision":"REJECT"' audit_log.jsonl | jq
-
-# Average composite score
-jq -s '[.[].composite_score] | add/length' audit_log.jsonl
-```
-
-## Limitations
-
-- **Economic calendar**: Not currently integrated (returns `None`)
-- **India VIX**: Requires separate data source (returns `None` from sentiment endpoint)
-- **Multi-TP/SL**: Supported in model but only first value used in calculations
-- **Portfolio state**: Only USDT balance fetched from Binance
-
-## Human-in-the-Loop (HITL) Reinforcement Learning
-
-Argus includes a comprehensive feedback system that enables human experts to provide structured feedback on trade decisions. This creates a continuous improvement loop for the AI system.
-
-### Overview
-
-Every trade analysis receives a unique `trade_id`. Human traders can review outcomes and provide detailed feedback including:
-- Actual trade outcome (success/failure/partial)
-- Decision quality ratings (1-10 scale)
-- Agent-specific accuracy scores
-- Missed factors and reasoning corrections
-- Market execution details (TP hit, SL hit, price movement)
-- Reward signals for reinforcement learning (-1 to +1)
-
-### Feedback Data Structure
-
-```python
-TradeFeedback(
-    trade_id="uuid",                          # Links to original trade
-    actual_outcome="SUCCESS|FAILURE|...",     # What actually happened
-    outcome_reason="...",                     # Why it happened
-    was_decision_correct=True/False,          # Was the system right?
-    decision_quality_score=8,                 # 1-10 rating
-    what_went_right="...",                    # Success factors
-    what_went_wrong="...",                    # Failure factors
-    missed_factors=["liquidity", "news"],     # What the system missed
-    should_have_been="REJECT",                # Correct decision if wrong
-    technical_agent_accuracy=7,               # Per-agent ratings
-    sentiment_agent_accuracy=9,
-    metrics_agent_accuracy=8,
-    volatility_agent_accuracy=6,
-    reward_signal=0.8,                        # RL reward (-1 to +1)
-    confidence=0.9                            # Feedback confidence
-)
-```
-
-### Using the Feedback System
-
-#### 1. View Recent Trades
-
-```bash
-python feedback_cli.py
-# Choose option 1 to see last 20 trades
-```
-
-#### 2. Submit Feedback (Interactive)
-
-```bash
-python feedback_cli.py <trade_id>
-```
-
-The CLI guides you through:
-1. Viewing the original trade analysis
-2. Reporting actual outcome (success/failure/pending)
-3. Rating decision quality (1-10)
-4. Identifying what went right/wrong
-5. Listing missed factors
-6. Rating each agent's accuracy
-7. Providing market execution details
-8. Assigning reward signal for RL
-
-Example session:
-```bash
-python feedback_cli.py a1b2c3d4-e5f6-7890-abcd-ef1234567890
-
-# Interactive prompts guide you through feedback
-# Trade details are displayed for context
-# Feedback is validated and saved to feedback_log.jsonl
-```
-
-#### 3. Query Feedback Data
-
-```bash
-# View aggregate statistics
-python feedback_query.py summary
-
-# Find all failures
-python feedback_query.py outcome FAILURE
-
-# Find incorrect decisions (learning opportunities)
-python feedback_query.py incorrect
-
-# View feedback for specific trade
-python feedback_query.py trade <trade_id>
-
-# Export training data for ML
-python feedback_query.py export training_data.json
-```
-
-### Feedback Files
-
-- `feedback_log.jsonl` - All human feedback (append-only)
-- `audit_log.jsonl` - All trade decisions (linked by trade_id)
-
-### Query Examples
-
-**Summary Statistics:**
-```bash
-python feedback_query.py summary
-```
-Output:
-```
-Total Feedbacks: 45
-Average Decision Quality: 7.8/10
-Average Reward Signal: 0.623
-
-Outcome Distribution:
-  SUCCESS             :   28 ( 62.2%)
-  FAILURE             :   12 ( 26.7%)
-  PARTIAL_SUCCESS     :    5 ( 11.1%)
-
-Decision Accuracy:
-  Correct Decisions  : 38
-  Incorrect Decisions: 7
-  Accuracy Rate      : 84.4%
-
-Agent Accuracy (Average):
-  Technical      : 8.2/10
-  Sentiment      : 7.5/10
-  Metrics        : 8.9/10
-  Volatility     : 7.1/10
-
-Top Missed Factors:
-  liquidity squeeze              : 8 occurrences
-  whale activity                 : 5 occurrences
-  news event timing              : 4 occurrences
-```
-
-**Finding Learning Opportunities:**
-```bash
-python feedback_query.py incorrect
-```
-Shows all trades where the system's decision was marked incorrect, along with what the decision should have been and why.
-
-### Using Feedback for Training
-
-Export feedback data for ML training:
-```bash
-python feedback_query.py export ml_training_data.json
-```
-
-This creates a structured dataset with:
-- Original signal and context
-- All agent scores and reasoning
-- System decision vs. human-corrected decision
-- Reward signals
-- Agent-specific accuracy ratings
-- Market outcome data
-
-**Potential Use Cases:**
-1. **Fine-tune agent weights** - Adjust Technical:30%, Metrics:30%, etc. based on accuracy
-2. **Calibrate decision thresholds** - Refine 75/50/30 score cutoffs
-3. **Identify systematic biases** - Find patterns in missed factors
-4. **Train reward models** - Use human reward signals for RL
-5. **Detect edge cases** - Find scenarios where all agents fail
-6. **Update synthesis prompts** - Improve Claude's synthesis instructions
-
-### Feedback Metrics
-
-Track system improvement over time:
-
-```bash
-# Compare feedback by date range
-python feedback_query.py summary --from 2026-05-01 --to 2026-05-15
-python feedback_query.py summary --from 2026-05-16 --to 2026-05-31
-
-# Measure: decision accuracy, quality scores, reward signals
-```
-
-### Best Practices
-
-1. **Submit feedback promptly** - Review trades within 24-48 hours of completion
-2. **Be specific** - Detailed "what went wrong" is more valuable than generic feedback
-3. **Rate consistently** - Use the same scale for all feedback
-4. **Include market data** - Actual TP/SL hits and price movements enable better training
-5. **Track missed factors** - These become features for future improvements
-6. **Update pending feedback** - Follow up on PENDING trades once resolved
-
-### Integration with Production
-
-The feedback system is designed for production use:
-
-- **Append-only logs** - No data loss, full audit trail
-- **Structured validation** - Pydantic ensures data quality
-- **Backward compatible** - Won't break if audit log schema changes
-- **Export ready** - JSON format works with any ML framework
-- **CLI-first** - Can be automated or wrapped in web UI
-
-### Future Enhancements
-
-- [ ] Web dashboard for feedback submission
-- [ ] Automated feedback from trade execution systems
-- [ ] Real-time model retraining pipeline
-- [ ] A/B testing framework for model versions
-- [ ] Feedback quality scoring (detect outlier feedback)
-
-## Roadmap
-
-- [x] Human-in-the-Loop feedback system
-- [ ] Economic calendar integration (Forex Factory, Trading Economics)
-- [ ] India VIX data source (NSE API)
-- [ ] Multi-TP/SL support in agents
-- [ ] PostgreSQL/TimescaleDB backend for audit logs
-- [ ] Prometheus metrics export
-- [ ] Backtesting framework
-- [ ] Web dashboard for monitoring
-- [ ] Webhook support for external integrations
-- [ ] Automated model retraining from feedback
+- UV package manager
+- API Keys: Binance, Alpha Vantage, Anthropic (optional)
 
 ## License
 
@@ -618,13 +92,9 @@ Proprietary - Argus Project
 
 ## Support
 
-For issues or questions:
-1. Check audit logs: `audit_log.jsonl`
-2. Review error messages in console output
-3. Verify API key configuration
-4. Test with minimal example in `main.py`
+See [documentation](.agent/README.md) for detailed guides and troubleshooting.
 
 ---
 
-**Last Updated:** 2026-05-12
-**Version:** 1.0.0 (Production Ready)
+**Version:** 1.1.0  
+**Status:** ✅ Production Ready + HITL Enabled
