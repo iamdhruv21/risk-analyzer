@@ -32,121 +32,97 @@ class ContextAggregator:
         if self.exchange:
             await self.exchange.close()
 
-    async def fetch_market_data(self, asset: str) -> Dict[str, Any]:
-        """Fetch live market data from Binance if keys are provided, otherwise fallback to mock."""
-        if self.exchange and self.binance_key != "your_api_key_here":
-            try:
-                symbol = f"{asset}/USDT"
-                ticker = await self.exchange.fetch_ticker(symbol)
-                ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe='1h', limit=20)
-                
-                return {
-                    "current_price": ticker['last'],
-                    "high_24h": ticker['high'],
-                    "low_24h": ticker['low'],
-                    "volume_24h": ticker['baseVolume'],
-                    "ohlcv": ohlcv,
-                    "source": "live_binance"
-                }
-            except Exception as e:
-                print(f"Error fetching live Binance data: {e}")
-                # Fallback to mock logic below
+    async def fetch_market_data(self, asset: str) -> Dict[str, Any] | None:
+        """Fetch live market data from Binance. Returns None if API keys are not configured or request fails."""
+        if not self.exchange or not self.binance_key or self.binance_key == "your_api_key_here":
+            print(f"Binance API keys not configured. Cannot fetch market data for {asset}")
+            return None
 
-        # Mocking async fetch (Fallback)
-        await asyncio.sleep(0.1)
-        return {
-            "current_price": 65200.0,
-            "atr_14": 1200.5,
-            "volume_24h": 500000000,
-            "ohlcv": [],
-            "source": "mock"
-        }
+        try:
+            symbol = f"{asset}/USDT"
+            ticker = await self.exchange.fetch_ticker(symbol)
+            ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe='1h', limit=20)
 
-    async def fetch_news_data(self, asset: str) -> list:
-        """Fetch live headlines and sentiment from Alpha Vantage."""
+            return {
+                "current_price": ticker['last'],
+                "high_24h": ticker['high'],
+                "low_24h": ticker['low'],
+                "volume_24h": ticker['baseVolume'],
+                "ohlcv": ohlcv,
+                "source": "live_binance"
+            }
+        except Exception as e:
+            print(f"Error fetching live Binance data for {asset}: {e}")
+            return None
+
+    async def fetch_news_data(self, asset: str) -> list | None:
+        """Fetch live headlines and sentiment from Alpha Vantage. Returns None if API key is not configured or request fails."""
         av_key = os.getenv("ALPHA_VANTAGE_API_KEY")
-        
-        if av_key and av_key != "your_alpha_vantage_key_here":
-            try:
-                # Alpha Vantage News & Sentiment endpoint
-                # We filter by tickers (e.g., CRYPTO:BTC or just BTC)
-                ticker = f"CRYPTO:{asset}" if asset in ["BTC", "ETH"] else asset
-                url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={ticker}&apikey={av_key}"
-                
-                async with self.session.get(url) as response:
-                    data = await response.json()
-                    feed = data.get("feed", [])
-                    
-                    results = []
-                    for item in feed[:5]: # Take top 5 latest news
-                        # Map Alpha Vantage sentiment labels to scores if needed, 
-                        # but they already provide a 'ticker_sentiment_score'
-                        ticker_sentiment = 0.5
-                        for t in item.get("ticker_sentiment", []):
-                            if t.get("ticker") == asset:
-                                ticker_sentiment = float(t.get("ticker_sentiment_score", 0.5))
-                                break
-                        
-                        results.append({
-                            "headline": item.get("title"),
-                            "sentiment": (ticker_sentiment + 1) / 2, # Normalize -1 to 1 into 0 to 1
-                            "url": item.get("url"),
-                            "source": item.get("source")
-                        })
-                    
-                    if results:
-                        return results
-            except Exception as e:
-                print(f"Error fetching Alpha Vantage news: {e}")
 
-        # Fallback to mock
-        await asyncio.sleep(0.2)
-        return [
-            {"headline": "BTC ETFs see record inflows", "sentiment": 0.8},
-            {"headline": "Central bank hints at rate cut", "sentiment": 0.5}
-        ]
+        if not av_key or av_key == "your_alpha_vantage_key_here":
+            print(f"Alpha Vantage API key not configured. Cannot fetch news data for {asset}")
+            return None
 
-    async def fetch_economic_calendar(self) -> list:
-        """Fetch scheduled high-impact events"""
-        await asyncio.sleep(0.15)
-        return [
-            {"event": "FOMC Meeting", "time": "2026-05-01T18:00:00Z", "impact": "HIGH"}
-        ]
+        try:
+            ticker = f"CRYPTO:{asset}" if asset in ["BTC", "ETH"] else asset
+            url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={ticker}&apikey={av_key}"
 
-    async def fetch_portfolio_state(self) -> Dict[str, Any]:
-        """Fetch live account balance from Binance if keys are provided."""
-        if self.exchange and self.binance_key != "your_api_key_here":
-            try:
-                balance = await self.exchange.fetch_balance()
-                # Simplified: Get USDT equity
-                usdt_balance = balance.get('USDT', {})
-                return {
-                    "equity": usdt_balance.get('total', 0.0),
-                    "free": usdt_balance.get('free', 0.0),
-                    "source": "live_binance"
-                }
-            except Exception as e:
-                print(f"Error fetching Binance balance: {e}")
+            async with self.session.get(url) as response:
+                data = await response.json()
+                feed = data.get("feed", [])
 
-        await asyncio.sleep(0.05)
-        return {
-            "equity": 10000.0,
-            "balance": 9500.0,
-            "open_positions": [],
-            "daily_drawdown": 0.02,
-            "source": "mock"
-        }
+                if not feed:
+                    print(f"No news data available for {asset}")
+                    return None
 
-    async def fetch_sentiment_data(self) -> Dict[str, Any]:
-        """Fetch Fear/Greed index, MMI, VIX, etc."""
-        await asyncio.sleep(0.1)
-        return {
-            "fear_greed_index": 65,
-            "mmi": 55.5, # Market Movement Insight (0-100)
-            "vix": 15.2,
-            "india_vix": 12.8,
-            "market_regime": "bullish_expansion"
-        }
+                results = []
+                for item in feed[:5]:
+                    ticker_sentiment = 0.5
+                    for t in item.get("ticker_sentiment", []):
+                        if t.get("ticker") == asset:
+                            ticker_sentiment = float(t.get("ticker_sentiment_score", 0.5))
+                            break
+
+                    results.append({
+                        "headline": item.get("title"),
+                        "sentiment": (ticker_sentiment + 1) / 2,
+                        "url": item.get("url"),
+                        "source": item.get("source")
+                    })
+
+                return results if results else None
+        except Exception as e:
+            print(f"Error fetching Alpha Vantage news for {asset}: {e}")
+            return None
+
+    async def fetch_economic_calendar(self) -> list | None:
+        """Fetch scheduled high-impact events. Returns None as no API integration is configured."""
+        print("Economic calendar API not configured. Returning None.")
+        return None
+
+    async def fetch_portfolio_state(self) -> Dict[str, Any] | None:
+        """Fetch live account balance from Binance. Returns None if API keys are not configured or request fails."""
+        if not self.exchange or not self.binance_key or self.binance_key == "your_api_key_here":
+            print("Binance API keys not configured. Cannot fetch portfolio state.")
+            return None
+
+        try:
+            balance = await self.exchange.fetch_balance()
+            usdt_balance = balance.get('USDT', {})
+
+            return {
+                "equity": usdt_balance.get('total', 0.0),
+                "free": usdt_balance.get('free', 0.0),
+                "source": "live_binance"
+            }
+        except Exception as e:
+            print(f"Error fetching Binance balance: {e}")
+            return None
+
+    async def fetch_sentiment_data(self) -> Dict[str, Any] | None:
+        """Fetch Fear/Greed index, MMI, VIX, etc. Returns None as no API integration is configured."""
+        print("Sentiment data API not configured. Returning None.")
+        return None
 
     async def aggregate_all_context(self, signal: TradeSignal) -> RiskContext:
         """Parallel Data Fetch using asyncio.gather"""

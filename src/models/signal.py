@@ -1,4 +1,5 @@
 from typing import Literal, Optional, Union, List
+from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
 class TradeSignal(BaseModel):
@@ -28,12 +29,12 @@ class TradeSignal(BaseModel):
         return v
 
 class RiskContext(BaseModel):
-    """Placeholder for Layer 1 context data"""
-    market_data: dict = {}
-    news_data: list = []
-    economic_calendar: list = []
-    portfolio_state: dict = {}
-    sentiment: dict = {}
+    """Layer 1 context data from various market sources"""
+    market_data: Optional[dict] = None
+    news_data: Optional[list] = None
+    economic_calendar: Optional[list] = None
+    portfolio_state: Optional[dict] = None
+    sentiment: Optional[dict] = None
 
 class RiskAnalysisReport(BaseModel):
     """Layer 6: Final Structured Output"""
@@ -47,4 +48,4 @@ class RiskAnalysisReport(BaseModel):
     rationale: str
     suggested_adjustments: Optional[dict] = None
     status: str = "COMPLETE"
-    timestamp: str = Field(default_factory=lambda: "2026-05-01T12:00:00Z") # Mocked timestamp
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

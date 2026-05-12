@@ -5,6 +5,15 @@ class SentimentAgent:
     """Agent B: The Macro Desk"""
 
     def analyze(self, signal: TradeSignal, context: RiskContext) -> Dict[str, Any]:
+        if context.sentiment is None and context.news_data is None:
+            return {
+                "score": None,
+                "reasoning": "Sentiment and news data unavailable - cannot perform sentiment analysis",
+                "avg_sentiment": None,
+                "mmi": None,
+                "fear_greed_index": None
+            }
+
         news = context.news_data
         calendar = context.economic_calendar
         sentiment_data = context.sentiment
@@ -45,7 +54,7 @@ class SentimentAgent:
             reasons.append("No news data available")
 
         # 2. MMI (Market Movement Insight) - Higher MMI suggests stronger momentum
-        mmi = sentiment_data.get("mmi", 50)
+        mmi = sentiment_data.get("mmi") if sentiment_data else None
         if mmi is not None:
             if mmi > 70:
                 score += 10
@@ -57,7 +66,7 @@ class SentimentAgent:
                 reasons.append(f"Neutral MMI: {mmi}")
 
         # 3. Fear & Greed Index - Higher greed can be a contrarian signal
-        fear_greed = sentiment_data.get("fear_greed_index", 50)
+        fear_greed = sentiment_data.get("fear_greed_index") if sentiment_data else None
         if fear_greed is not None:
             if fear_greed > 75:
                 # Extreme greed - contrarian bearish signal
@@ -74,8 +83,8 @@ class SentimentAgent:
                 reasons.append(f"Fear & Greed Index: {fear_greed}")
 
         # 4. Market Regime Consideration
-        regime = sentiment_data.get("market_regime", "neutral")
-        if regime == "bullish_expansion" and signal.type == "BUY":
+        regime = sentiment_data.get("market_regime") if sentiment_data else None
+        if regime and regime == "bullish_expansion" and signal.type == "BUY":
             score += 10
             reasons.append("Regime aligned with BUY signal")
         elif regime == "bearish_capitulation" and signal.type == "SELL":
@@ -89,7 +98,7 @@ class SentimentAgent:
             reasons.append("BUY signal against bearish regime")
 
         # 5. Check for high-impact events
-        high_impact = [e for e in calendar if e.get("impact") == "HIGH"]
+        high_impact = [e for e in calendar if e.get("impact") == "HIGH"] if calendar else []
         if high_impact:
             score -= 20
             reasons.append(f"High impact events detected: {[e['event'] for e in high_impact]}")

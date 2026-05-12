@@ -15,34 +15,31 @@ class RiskSynthesisAgent:
         """
         Aggregates sub-agent outputs into a unified assessment using Claude.
         """
+        required_agents = ["technical", "metrics", "volatility", "sentiment"]
+        missing_agents = [agent for agent in required_agents if agent not in agent_reports]
+
+        if missing_agents:
+            return {
+                "composite_score": None,
+                "rationale": f"Cannot calculate composite score: Missing reports from {', '.join(missing_agents)}",
+                "warnings": [f"Missing agent reports: {', '.join(missing_agents)}"]
+            }
+
+        invalid_scores = []
+        for agent, report in agent_reports.items():
+            score = report.get("score")
+            if score is None or not isinstance(score, (int, float)) or score < 0 or score > 100:
+                invalid_scores.append(agent)
+
+        if invalid_scores:
+            return {
+                "composite_score": None,
+                "rationale": f"Cannot calculate composite score: Invalid or missing scores from {', '.join(invalid_scores)}. Insufficient data for risk assessment.",
+                "warnings": [f"Invalid/missing scores from: {', '.join(invalid_scores)}"]
+            }
+
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key or api_key == "your_anthropic_key_here":
-            # Validate that all required agent reports exist and have valid scores
-            required_agents = ["technical", "metrics", "volatility", "sentiment"]
-            missing_agents = [agent for agent in required_agents if agent not in agent_reports]
-
-            if missing_agents:
-                return {
-                    "composite_score": None,
-                    "rationale": f"Cannot calculate composite score: Missing reports from {', '.join(missing_agents)}",
-                    "warnings": ["LLM Synthesis skipped - API key not configured.", f"Missing agent reports: {', '.join(missing_agents)}"]
-                }
-
-            # Validate that all scores are valid numbers
-            invalid_scores = []
-            for agent, report in agent_reports.items():
-                score = report.get("score")
-                if score is None or not isinstance(score, (int, float)) or score < 0 or score > 100:
-                    invalid_scores.append(agent)
-
-            if invalid_scores:
-                return {
-                    "composite_score": None,
-                    "rationale": f"Cannot calculate composite score: Invalid scores from {', '.join(invalid_scores)}",
-                    "warnings": ["LLM Synthesis skipped - API key not configured.", f"Invalid scores from: {', '.join(invalid_scores)}"]
-                }
-
-            # Fallback to weighted average only if all scores are valid
             weights = {"technical": 0.3, "metrics": 0.3, "volatility": 0.25, "sentiment": 0.15}
             score = sum(agent_reports[k]["score"] * weights[k] for k in weights if k in agent_reports)
             return {

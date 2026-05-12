@@ -5,19 +5,29 @@ class VolatilityAgent:
     """Agent D: The Market Psychologist"""
 
     def analyze(self, signal: TradeSignal, context: RiskContext) -> Dict[str, Any]:
+        if context.market_data is None and context.sentiment is None:
+            return {
+                "score": None,
+                "reasoning": "Market data and sentiment data unavailable - cannot perform volatility analysis",
+                "atr": None,
+                "regime": None,
+                "vix": None,
+                "india_vix": None
+            }
+
         market_data = context.market_data
         sentiment_data = context.sentiment
 
-        atr = market_data.get("atr_14", 0)
-        regime = sentiment_data.get("market_regime", "neutral")
-        vix = sentiment_data.get("vix", None)
-        india_vix = sentiment_data.get("india_vix", None)
+        atr = market_data.get("atr_14", 0) if market_data else 0
+        regime = sentiment_data.get("market_regime") if sentiment_data else None
+        vix = sentiment_data.get("vix") if sentiment_data else None
+        india_vix = sentiment_data.get("india_vix") if sentiment_data else None
 
         score = 50
         reasons = []
 
         # 1. Market Regime Analysis
-        if regime == "bullish_expansion":
+        if regime and regime == "bullish_expansion":
             score += 15
             reasons.append("Market in bullish expansion regime")
         elif regime == "bearish_capitulation":

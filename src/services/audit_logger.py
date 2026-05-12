@@ -19,21 +19,15 @@ class AuditLogger:
     async def log_decision(self, report: RiskAnalysisReport):
         """
         Persists the final decision and all context for reproducibility.
-        In a real scenario, this would write to PostgreSQL / TimeScaleDB.
+        Logs to structured JSONL file for audit trail.
         """
-        log_entry = report.model_dump()
-        log_entry["timestamp"] = datetime.utcnow().isoformat()
-        
-        # 1. Structured File Logging (JSONL)
-        self.logger.info(json.dumps(log_entry))
-        
-        # 2. Mocking DB Insertion (Task 5.2)
-        # In production:
-        # await db.execute("INSERT INTO audit_logs ...", log_entry)
-        print(f"\n[AuditLog] Decision '{report.decision}' persisted to audit trail.")
-        
-        # 3. Observability (Task 5.3)
-        # In production:
-        # prometheus_counter.labels(decision=report.decision).inc()
-        # langsmith_client.log_trace(report.synthesis)
-        pass
+        try:
+            log_entry = report.model_dump()
+            log_entry["timestamp"] = datetime.utcnow().isoformat()
+
+            self.logger.info(json.dumps(log_entry))
+            print(f"\n[AuditLog] Decision '{report.decision}' persisted to audit trail at {log_entry['timestamp']}")
+
+        except Exception as e:
+            print(f"[AuditLog] Error persisting decision: {e}")
+            raise

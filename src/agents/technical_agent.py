@@ -7,9 +7,20 @@ class TechnicalAgent:
     """Agent A: The Chart Reader"""
     
     def analyze(self, signal: TradeSignal, context: RiskContext) -> Dict[str, Any]:
+        if context.market_data is None:
+            return {
+                "score": None,
+                "reasoning": "Market data unavailable - cannot perform technical analysis",
+                "indicators": None
+            }
+
         ohlcv = context.market_data.get("ohlcv", [])
-        if not ohlcv:
-            return {"score": 50, "reason": "No OHLCV data available for technical analysis"}
+        if not ohlcv or len(ohlcv) < 14:
+            return {
+                "score": None,
+                "reasoning": "Insufficient OHLCV data for technical analysis (minimum 14 bars required)",
+                "indicators": None
+            }
 
         # Convert to DataFrame
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
