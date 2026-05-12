@@ -20,7 +20,11 @@ class VolatilityAgent:
 
         atr = market_data.get("atr_14", 0) if market_data else 0
         regime = sentiment_data.get("market_regime") if sentiment_data else None
-        vix = sentiment_data.get("vix") if sentiment_data else None
+
+        # Extract VIX value (handle both dict and numeric formats)
+        vix_data = sentiment_data.get("vix") if sentiment_data else None
+        vix = vix_data.get("value") if isinstance(vix_data, dict) else vix_data
+
         india_vix = sentiment_data.get("india_vix") if sentiment_data else None
 
         score = 50

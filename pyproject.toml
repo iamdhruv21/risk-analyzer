@@ -20,4 +20,5 @@ dependencies = [
     "spacy>=3.8.3",
     "groq>=0.13.2",
     "instructor>=1.7.3",
+    "yfinance>=0.2.51",
 ]

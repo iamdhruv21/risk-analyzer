@@ -68,25 +68,25 @@ class FastParser:
 
         return self._parse_numeric(val)
 
-    def _detect_asset_class(self, text: str, asset: str) -> AssetClass:
-        """Detect asset class from context"""
+    def _detect_asset_class(self, text: str, asset: str) -> str:
+        """Detect asset class from context - returns lowercase string"""
         text_upper = text.upper()
         asset_upper = asset.upper()
 
         # Crypto indicators
         if any(x in text_upper for x in ["USDT", "BTC", "ETH", "SOL", "XRP", "CRYPTO", "BINANCE"]):
-            return AssetClass.CRYPTO
+            return "crypto"
 
         # Forex indicators
         if any(x in text_upper for x in ["GOLD", "XAU", "EURUSD", "GBPUSD", "FOREX", "SILVER"]):
-            return AssetClass.FOREX
+            return "forex"
 
         # Indices indicators
         if any(x in text_upper for x in ["NIFTY", "BANKNIFTY", "SENSEX", "INDEX"]):
-            return AssetClass.INDICES
+            return "stock"  # Indices mapped to stock
 
         # Default to stocks
-        return AssetClass.STOCKS
+        return "stock"
 
     def parse(self, text: str) -> ParsedSignal | None:
         """Parse signal from text using fast regex-based extraction"""
@@ -178,9 +178,9 @@ class FastParser:
                 if standalone:
                     price = self._parse_numeric(standalone.group(1))
 
-        # 4. Extract Leverage
+        # 4. Extract Leverage (convert to int, default to 1)
         leverage_match = self.patterns["leverage"].search(text)
-        leverage = float(leverage_match.group(1)) if leverage_match else None
+        leverage = int(leverage_match.group(1)) if leverage_match else 1
 
         # 5. Extract Take Profit (TP)
         tp = None
@@ -220,11 +220,11 @@ class FastParser:
             sl = all_sls if len(all_sls) > 1 else (all_sls[0] if all_sls else None)
 
         return ParsedSignal(
-            type=signal_type,
             asset=asset,
             assetClass=self._detect_asset_class(text, asset),
+            type=signal_type,
             price=price if isinstance(price, float) else None,
-            leverage=leverage,
             tp=tp,
-            sl=sl
+            sl=sl,
+            leverage=leverage
         )

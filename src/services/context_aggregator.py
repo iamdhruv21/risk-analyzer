@@ -120,9 +120,62 @@ class ContextAggregator:
             return None
 
     async def fetch_sentiment_data(self) -> Dict[str, Any] | None:
-        """Fetch Fear/Greed index, MMI, VIX, etc. Returns None as no API integration is configured."""
-        print("Sentiment data API not configured. Returning None.")
-        return None
+        """
+        Fetch Fear/Greed index and VIX from free APIs.
+
+        APIs used (no keys required):
+        - Fear & Greed Index: https://api.alternative.me/fng/ (FREE)
+        - VIX: Yahoo Finance via yfinance library (FREE)
+
+        Returns None if all API calls fail.
+        """
+        sentiment_data = {}
+
+        # Fetch Fear & Greed Index (Crypto market sentiment)
+        try:
+            url = "https://api.alternative.me/fng/?limit=1"
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("data"):
+                        fng = data["data"][0]
+                        sentiment_data["fear_greed_index"] = {
+                            "value": int(fng.get("value", 50)),
+                            "classification": fng.get("value_classification", "Neutral"),
+                            "timestamp": fng.get("timestamp")
+                        }
+        except Exception as e:
+            print(f"Error fetching Fear & Greed Index: {e}")
+
+        # Fetch VIX (Volatility Index - market fear gauge)
+        try:
+            import yfinance as yf
+            vix = yf.Ticker("^VIX")
+            vix_hist = vix.history(period="1d")
+
+            if not vix_hist.empty:
+                current_vix = vix_hist['Close'].iloc[-1]
+                sentiment_data["vix"] = {
+                    "value": round(float(current_vix), 2),
+                    "interpretation": self._interpret_vix(current_vix)
+                }
+        except Exception as e:
+            print(f"Error fetching VIX: {e}")
+
+        return sentiment_data if sentiment_data else None
+
+    def _interpret_vix(self, vix_value: float) -> str:
+        """Interpret VIX value into risk level"""
+        if vix_value < 12:
+            return "Very Low Volatility"
+        elif vix_value < 20:
+            return "Low Volatility"
+        elif vix_value < 30:
+            return "Moderate Volatility"
+        elif vix_value < 40:
+            return "High Volatility"
+        else:
+            return "Extreme Volatility"
 
     async def aggregate_all_context(self, signal: TradeSignal) -> RiskContext:
         """Parallel Data Fetch using asyncio.gather"""

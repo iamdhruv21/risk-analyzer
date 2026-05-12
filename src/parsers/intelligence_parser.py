@@ -28,20 +28,22 @@ class IntelligenceParser:
             return None
 
         system_prompt = """You are a specialized trade signal parser.
-                        Extract trading signal details from the provided text into structured JSON format.
-                        
-                        Guidelines:
-                        - type: BUY, SELL, or LIMIT
-                        - asset: The trading instrument (e.g., BTC, GOLD, NIFTY)
-                        - assetClass: CRYPTO, FOREX, STOCKS, or INDICES
-                        - price: Entry price (single number, use midpoint if range)
-                        - leverage: Leverage multiplier (e.g., 5 for 5x)
-                        - tp: Take profit target(s) - can be single number or array
-                        - sl: Stop loss level(s) - can be single number or array
-                        
-                        If a field is unclear or missing, use null.
-                        For multiple TPs or SLs, return as an array.
-                        """
+Extract trading signal details from the provided text into structured JSON format.
+
+IMPORTANT: Output format must match risk analyzer schema exactly:
+
+Guidelines:
+- asset: The trading instrument (e.g., BTC, GOLD, NIFTY)
+- assetClass: Must be lowercase: "crypto", "forex", "stock", or "commodity"
+- type: BUY, SELL, or LIMIT
+- price: Entry price (single number, use midpoint if range)
+- tp: Take profit target(s) - can be single number or array
+- sl: Stop loss level(s) - can be single number or array
+- leverage: Integer (1-125), default to 1 if not specified
+
+If a field is unclear or missing, use null.
+For multiple TPs or SLs, return as an array.
+"""
 
         try:
             result = self.client.chat.completions.create(

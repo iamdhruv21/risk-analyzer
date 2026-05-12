@@ -1,13 +1,14 @@
 from enum import Enum
 from typing import Union, Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dataclasses import dataclass
 
 class AssetClass(str, Enum):
-    CRYPTO = "CRYPTO"
-    FOREX = "FOREX"
-    STOCKS = "STOCKS"
-    INDICES = "INDICES"
+    """Asset class enum matching risk analyzer format"""
+    CRYPTO = "crypto"
+    FOREX = "forex"
+    STOCKS = "stock"
+    INDICES = "stock"  # Indices mapped to stock
 
 class SignalType(str, Enum):
     BUY = "BUY"
@@ -22,14 +23,14 @@ class PriceRange(BaseModel):
 PriceValue = Union[float, list[float], PriceRange, None]
 
 class ParsedSignal(BaseModel):
-    """Parsed trade signal from text"""
-    type: SignalType
+    """Parsed trade signal - output format matches risk analyzer input"""
     asset: str
-    assetClass: AssetClass
+    assetClass: str  # lowercase: crypto, forex, stock, commodity
+    type: SignalType
     price: float | None = None
-    leverage: float | None = None
     tp: PriceValue = None
     sl: PriceValue = None
+    leverage: int | None = Field(default=1, ge=1, le=125)  # int, defaults to 1
 
 @dataclass
 class ParsingResult:

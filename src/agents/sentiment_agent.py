@@ -66,21 +66,28 @@ class SentimentAgent:
                 reasons.append(f"Neutral MMI: {mmi}")
 
         # 3. Fear & Greed Index - Higher greed can be a contrarian signal
-        fear_greed = sentiment_data.get("fear_greed_index") if sentiment_data else None
+        fear_greed_data = sentiment_data.get("fear_greed_index") if sentiment_data else None
+        fear_greed = None
+        if fear_greed_data is not None:
+            # Extract numeric value if it's a dict (new format)
+            fear_greed = fear_greed_data.get("value") if isinstance(fear_greed_data, dict) else fear_greed_data
+
         if fear_greed is not None:
+            classification = fear_greed_data.get("classification", "") if isinstance(fear_greed_data, dict) else ""
+
             if fear_greed > 75:
                 # Extreme greed - contrarian bearish signal
                 score -= 15
-                reasons.append(f"Extreme greed detected ({fear_greed}) - contrarian caution")
+                reasons.append(f"Extreme greed detected ({fear_greed}, {classification}) - contrarian caution")
             elif fear_greed < 25:
                 # Extreme fear - contrarian bullish signal
                 score += 15
-                reasons.append(f"Extreme fear detected ({fear_greed}) - contrarian opportunity")
+                reasons.append(f"Extreme fear detected ({fear_greed}, {classification}) - contrarian opportunity")
             elif 40 <= fear_greed <= 60:
                 score += 5
-                reasons.append(f"Neutral sentiment ({fear_greed}) - balanced market")
+                reasons.append(f"Neutral sentiment ({fear_greed}, {classification}) - balanced market")
             else:
-                reasons.append(f"Fear & Greed Index: {fear_greed}")
+                reasons.append(f"Fear & Greed Index: {fear_greed} ({classification})")
 
         # 4. Market Regime Consideration
         regime = sentiment_data.get("market_regime") if sentiment_data else None
@@ -108,5 +115,6 @@ class SentimentAgent:
             "reasoning": "; ".join(reasons),
             "avg_sentiment": round(sum(item.get("sentiment", 0.5) for item in news) / len(news), 2) if news else None,
             "mmi": mmi,
-            "fear_greed_index": fear_greed
+            "fear_greed_index": fear_greed,
+            "fear_greed_classification": fear_greed_data.get("classification") if isinstance(fear_greed_data, dict) else None
         }
