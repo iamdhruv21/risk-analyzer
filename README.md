@@ -129,24 +129,29 @@ Persists all decisions to JSONL file with full context for reproducibility.
 ```
 risk-analysis/
 ├── src/
-│   ├── analyzer.py                  # Main orchestrator
+│   ├── analyzer.py                    # Main orchestrator
 │   ├── models/
-│   │   └── signal.py                # Pydantic models (TradeSignal, RiskContext, RiskAnalysisReport)
+│   │   ├── signal.py                  # Pydantic models (TradeSignal, RiskContext, RiskAnalysisReport)
+│   │   └── feedback.py                # HITL feedback models
 │   ├── services/
-│   │   ├── context_aggregator.py    # Layer 1: Data fetching
-│   │   ├── rule_engine.py           # Layer 2: Fast rules
-│   │   ├── decision_gate.py         # Layer 5: Final decision
-│   │   └── audit_logger.py          # Layer 6: Logging
+│   │   ├── context_aggregator.py      # Layer 1: Data fetching
+│   │   ├── rule_engine.py             # Layer 2: Fast rules
+│   │   ├── decision_gate.py           # Layer 5: Final decision
+│   │   ├── audit_logger.py            # Layer 6: Logging
+│   │   └── feedback_collector.py      # HITL feedback management
 │   └── agents/
-│       ├── technical_agent.py       # Layer 3: Technical analysis
-│       ├── sentiment_agent.py       # Layer 3: Sentiment analysis
-│       ├── metrics_agent.py         # Layer 3: Risk metrics
-│       ├── volatility_agent.py      # Layer 3: Volatility analysis
-│       └── synthesis_agent.py       # Layer 4: LLM synthesis
-├── main.py                          # Entry point
-├── .env                             # API keys configuration
-├── pyproject.toml                   # Dependencies
-└── audit_log.jsonl                  # Decision audit trail
+│       ├── technical_agent.py         # Layer 3: Technical analysis
+│       ├── sentiment_agent.py         # Layer 3: Sentiment analysis
+│       ├── metrics_agent.py           # Layer 3: Risk metrics
+│       ├── volatility_agent.py        # Layer 3: Volatility analysis
+│       └── synthesis_agent.py         # Layer 4: LLM synthesis
+├── main.py                            # Entry point
+├── feedback_cli.py                    # Interactive feedback submission
+├── feedback_query.py                  # Query and analyze feedback
+├── .env                               # API keys configuration
+├── pyproject.toml                     # Dependencies
+├── audit_log.jsonl                    # Decision audit trail
+└── feedback_log.jsonl                 # Human feedback (HITL)
 ```
 
 ## Installation
@@ -398,8 +403,205 @@ jq -s '[.[].composite_score] | add/length' audit_log.jsonl
 - **Multi-TP/SL**: Supported in model but only first value used in calculations
 - **Portfolio state**: Only USDT balance fetched from Binance
 
+## Human-in-the-Loop (HITL) Reinforcement Learning
+
+Argus includes a comprehensive feedback system that enables human experts to provide structured feedback on trade decisions. This creates a continuous improvement loop for the AI system.
+
+### Overview
+
+Every trade analysis receives a unique `trade_id`. Human traders can review outcomes and provide detailed feedback including:
+- Actual trade outcome (success/failure/partial)
+- Decision quality ratings (1-10 scale)
+- Agent-specific accuracy scores
+- Missed factors and reasoning corrections
+- Market execution details (TP hit, SL hit, price movement)
+- Reward signals for reinforcement learning (-1 to +1)
+
+### Feedback Data Structure
+
+```python
+TradeFeedback(
+    trade_id="uuid",                          # Links to original trade
+    actual_outcome="SUCCESS|FAILURE|...",     # What actually happened
+    outcome_reason="...",                     # Why it happened
+    was_decision_correct=True/False,          # Was the system right?
+    decision_quality_score=8,                 # 1-10 rating
+    what_went_right="...",                    # Success factors
+    what_went_wrong="...",                    # Failure factors
+    missed_factors=["liquidity", "news"],     # What the system missed
+    should_have_been="REJECT",                # Correct decision if wrong
+    technical_agent_accuracy=7,               # Per-agent ratings
+    sentiment_agent_accuracy=9,
+    metrics_agent_accuracy=8,
+    volatility_agent_accuracy=6,
+    reward_signal=0.8,                        # RL reward (-1 to +1)
+    confidence=0.9                            # Feedback confidence
+)
+```
+
+### Using the Feedback System
+
+#### 1. View Recent Trades
+
+```bash
+python feedback_cli.py
+# Choose option 1 to see last 20 trades
+```
+
+#### 2. Submit Feedback (Interactive)
+
+```bash
+python feedback_cli.py <trade_id>
+```
+
+The CLI guides you through:
+1. Viewing the original trade analysis
+2. Reporting actual outcome (success/failure/pending)
+3. Rating decision quality (1-10)
+4. Identifying what went right/wrong
+5. Listing missed factors
+6. Rating each agent's accuracy
+7. Providing market execution details
+8. Assigning reward signal for RL
+
+Example session:
+```bash
+python feedback_cli.py a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+# Interactive prompts guide you through feedback
+# Trade details are displayed for context
+# Feedback is validated and saved to feedback_log.jsonl
+```
+
+#### 3. Query Feedback Data
+
+```bash
+# View aggregate statistics
+python feedback_query.py summary
+
+# Find all failures
+python feedback_query.py outcome FAILURE
+
+# Find incorrect decisions (learning opportunities)
+python feedback_query.py incorrect
+
+# View feedback for specific trade
+python feedback_query.py trade <trade_id>
+
+# Export training data for ML
+python feedback_query.py export training_data.json
+```
+
+### Feedback Files
+
+- `feedback_log.jsonl` - All human feedback (append-only)
+- `audit_log.jsonl` - All trade decisions (linked by trade_id)
+
+### Query Examples
+
+**Summary Statistics:**
+```bash
+python feedback_query.py summary
+```
+Output:
+```
+Total Feedbacks: 45
+Average Decision Quality: 7.8/10
+Average Reward Signal: 0.623
+
+Outcome Distribution:
+  SUCCESS             :   28 ( 62.2%)
+  FAILURE             :   12 ( 26.7%)
+  PARTIAL_SUCCESS     :    5 ( 11.1%)
+
+Decision Accuracy:
+  Correct Decisions  : 38
+  Incorrect Decisions: 7
+  Accuracy Rate      : 84.4%
+
+Agent Accuracy (Average):
+  Technical      : 8.2/10
+  Sentiment      : 7.5/10
+  Metrics        : 8.9/10
+  Volatility     : 7.1/10
+
+Top Missed Factors:
+  liquidity squeeze              : 8 occurrences
+  whale activity                 : 5 occurrences
+  news event timing              : 4 occurrences
+```
+
+**Finding Learning Opportunities:**
+```bash
+python feedback_query.py incorrect
+```
+Shows all trades where the system's decision was marked incorrect, along with what the decision should have been and why.
+
+### Using Feedback for Training
+
+Export feedback data for ML training:
+```bash
+python feedback_query.py export ml_training_data.json
+```
+
+This creates a structured dataset with:
+- Original signal and context
+- All agent scores and reasoning
+- System decision vs. human-corrected decision
+- Reward signals
+- Agent-specific accuracy ratings
+- Market outcome data
+
+**Potential Use Cases:**
+1. **Fine-tune agent weights** - Adjust Technical:30%, Metrics:30%, etc. based on accuracy
+2. **Calibrate decision thresholds** - Refine 75/50/30 score cutoffs
+3. **Identify systematic biases** - Find patterns in missed factors
+4. **Train reward models** - Use human reward signals for RL
+5. **Detect edge cases** - Find scenarios where all agents fail
+6. **Update synthesis prompts** - Improve Claude's synthesis instructions
+
+### Feedback Metrics
+
+Track system improvement over time:
+
+```bash
+# Compare feedback by date range
+python feedback_query.py summary --from 2026-05-01 --to 2026-05-15
+python feedback_query.py summary --from 2026-05-16 --to 2026-05-31
+
+# Measure: decision accuracy, quality scores, reward signals
+```
+
+### Best Practices
+
+1. **Submit feedback promptly** - Review trades within 24-48 hours of completion
+2. **Be specific** - Detailed "what went wrong" is more valuable than generic feedback
+3. **Rate consistently** - Use the same scale for all feedback
+4. **Include market data** - Actual TP/SL hits and price movements enable better training
+5. **Track missed factors** - These become features for future improvements
+6. **Update pending feedback** - Follow up on PENDING trades once resolved
+
+### Integration with Production
+
+The feedback system is designed for production use:
+
+- **Append-only logs** - No data loss, full audit trail
+- **Structured validation** - Pydantic ensures data quality
+- **Backward compatible** - Won't break if audit log schema changes
+- **Export ready** - JSON format works with any ML framework
+- **CLI-first** - Can be automated or wrapped in web UI
+
+### Future Enhancements
+
+- [ ] Web dashboard for feedback submission
+- [ ] Automated feedback from trade execution systems
+- [ ] Real-time model retraining pipeline
+- [ ] A/B testing framework for model versions
+- [ ] Feedback quality scoring (detect outlier feedback)
+
 ## Roadmap
 
+- [x] Human-in-the-Loop feedback system
 - [ ] Economic calendar integration (Forex Factory, Trading Economics)
 - [ ] India VIX data source (NSE API)
 - [ ] Multi-TP/SL support in agents
@@ -408,6 +610,7 @@ jq -s '[.[].composite_score] | add/length' audit_log.jsonl
 - [ ] Backtesting framework
 - [ ] Web dashboard for monitoring
 - [ ] Webhook support for external integrations
+- [ ] Automated model retraining from feedback
 
 ## License
 

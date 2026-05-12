@@ -1,5 +1,6 @@
 from typing import Literal, Optional, Union, List
 from datetime import datetime
+from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator
 
 class TradeSignal(BaseModel):
@@ -38,6 +39,7 @@ class RiskContext(BaseModel):
 
 class RiskAnalysisReport(BaseModel):
     """Layer 6: Final Structured Output"""
+    trade_id: str = Field(default_factory=lambda: str(uuid4()))
     signal: TradeSignal
     context: RiskContext
     metrics: dict

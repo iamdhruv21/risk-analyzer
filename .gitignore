@@ -12,3 +12,13 @@ wheels/
 .claude
 data
 faltu
+.agent
+
+# Logs and runtime data
+audit_log.jsonl
+feedback_log.jsonl
+*.json
+!pyproject.toml
+
+# Environment
+.env
