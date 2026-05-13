@@ -25,7 +25,9 @@ class VolatilityAgent:
         vix_data = sentiment_data.get("vix") if sentiment_data else None
         vix = vix_data.get("value") if isinstance(vix_data, dict) else vix_data
 
-        india_vix = sentiment_data.get("india_vix") if sentiment_data else None
+        # Extract India VIX value (handle both dict and numeric formats)
+        india_vix_data = sentiment_data.get("india_vix") if sentiment_data else None
+        india_vix = india_vix_data.get("value") if isinstance(india_vix_data, dict) else india_vix_data
 
         score = 50
         reasons = []

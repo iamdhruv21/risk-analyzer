@@ -54,7 +54,8 @@ class SentimentAgent:
             reasons.append("No news data available")
 
         # 2. MMI (Market Movement Insight) - Higher MMI suggests stronger momentum
-        mmi = sentiment_data.get("mmi") if sentiment_data else None
+        mmi_data = sentiment_data.get("mmi") if sentiment_data else None
+        mmi = mmi_data.get("value") if isinstance(mmi_data, dict) else mmi_data
         if mmi is not None:
             if mmi > 70:
                 score += 10

@@ -5,6 +5,8 @@ import ccxt.async_support as ccxt
 from typing import Dict, Any
 from dotenv import load_dotenv
 from src.models.signal import TradeSignal, RiskContext
+from src.services.indian_market_data import IndianMarketDataProvider
+from src.services.news_aggregator import NewsAggregator
 
 # Load environment variables from .env
 load_dotenv()
@@ -15,6 +17,8 @@ class ContextAggregator:
         self.binance_key = os.getenv("BINANCE_API_KEY")
         self.binance_secret = os.getenv("BINANCE_API_SECRET")
         self.exchange = None
+        self.indian_market = None
+        self.news_aggregator = None
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -24,6 +28,10 @@ class ContextAggregator:
             'secret': self.binance_secret,
             'enableRateLimit': True,
         })
+        # Initialize Indian market data provider
+        self.indian_market = IndianMarketDataProvider(self.session)
+        # Initialize news aggregator
+        self.news_aggregator = NewsAggregator(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -146,45 +154,16 @@ class ContextAggregator:
         else:
             return await self.fetch_market_data_yfinance(asset, asset_class)
 
-    async def fetch_news_data(self, asset: str) -> list | None:
-        """Fetch live headlines and sentiment from Alpha Vantage. Returns None if API key is not configured or request fails."""
-        av_key = os.getenv("ALPHA_VANTAGE_API_KEY")
-
-        if not av_key or av_key == "your_alpha_vantage_key_here":
-            print(f"Alpha Vantage API key not configured. Cannot fetch news data for {asset}")
+    async def fetch_news_data(self, asset: str, asset_class: str = "crypto") -> list | None:
+        """
+        Fetch news using the multi-source news aggregator
+        Supports: Indian stocks, crypto, commodities, US stocks
+        """
+        if not self.news_aggregator:
+            print("News aggregator not initialized")
             return None
 
-        try:
-            ticker = f"CRYPTO:{asset}" if asset in ["BTC", "ETH"] else asset
-            url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={ticker}&apikey={av_key}"
-
-            async with self.session.get(url) as response:
-                data = await response.json()
-                feed = data.get("feed", [])
-
-                if not feed:
-                    print(f"No news data available for {asset}")
-                    return None
-
-                results = []
-                for item in feed[:5]:
-                    ticker_sentiment = 0.5
-                    for t in item.get("ticker_sentiment", []):
-                        if t.get("ticker") == asset:
-                            ticker_sentiment = float(t.get("ticker_sentiment_score", 0.5))
-                            break
-
-                    results.append({
-                        "headline": item.get("title"),
-                        "sentiment": (ticker_sentiment + 1) / 2,
-                        "url": item.get("url"),
-                        "source": item.get("source")
-                    })
-
-                return results if results else None
-        except Exception as e:
-            print(f"Error fetching Alpha Vantage news for {asset}: {e}")
-            return None
+        return await self.news_aggregator.fetch_news(asset, asset_class)
 
     async def fetch_economic_calendar(self) -> list | None:
         """Fetch scheduled high-impact events. Returns None as no API integration is configured."""
@@ -233,48 +212,71 @@ class ContextAggregator:
         print("Portfolio state unavailable. Configure PORTFOLIO_EQUITY in .env or setup broker API.")
         return None
 
-    async def fetch_sentiment_data(self) -> Dict[str, Any] | None:
+    async def fetch_sentiment_data(self, asset_class: str = "crypto") -> Dict[str, Any] | None:
         """
-        Fetch Fear/Greed index and VIX from free APIs.
+        Fetch sentiment data based on market type
 
-        APIs used (no keys required):
-        - Fear & Greed Index: https://api.alternative.me/fng/ (FREE)
-        - VIX: Yahoo Finance via yfinance library (FREE)
+        For Crypto: Fear & Greed Index
+        For US Stocks: VIX
+        For Indian Stocks: India VIX + MMI
 
-        Returns None if all API calls fail.
+        All APIs are FREE - no keys required
         """
         sentiment_data = {}
 
-        # Fetch Fear & Greed Index (Crypto market sentiment)
-        try:
-            url = "https://api.alternative.me/fng/?limit=1"
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data.get("data"):
-                        fng = data["data"][0]
-                        sentiment_data["fear_greed_index"] = {
-                            "value": int(fng.get("value", 50)),
-                            "classification": fng.get("value_classification", "Neutral"),
-                            "timestamp": fng.get("timestamp")
-                        }
-        except Exception as e:
-            print(f"Error fetching Fear & Greed Index: {e}")
+        # For crypto assets - fetch Fear & Greed Index
+        if asset_class == "crypto":
+            try:
+                url = "https://api.alternative.me/fng/?limit=1"
+                async with self.session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("data"):
+                            fng = data["data"][0]
+                            sentiment_data["fear_greed_index"] = {
+                                "value": int(fng.get("value", 50)),
+                                "classification": fng.get("value_classification", "Neutral"),
+                                "timestamp": fng.get("timestamp")
+                            }
+                            print(f"✓ Crypto Fear & Greed: {fng.get('value')} ({fng.get('value_classification')})")
+            except Exception as e:
+                print(f"Error fetching Fear & Greed Index: {e}")
 
-        # Fetch VIX (Volatility Index - market fear gauge)
-        try:
-            import yfinance as yf
-            vix = yf.Ticker("^VIX")
-            vix_hist = vix.history(period="1d")
+        # For Indian stocks/indices - fetch India VIX and MMI
+        if asset_class == "stock" or asset_class == "index":
+            if self.indian_market:
+                # Fetch India VIX
+                india_vix = await self.indian_market.fetch_india_vix()
+                if india_vix:
+                    sentiment_data["india_vix"] = {
+                        "value": india_vix,
+                        "interpretation": self._interpret_vix(india_vix)
+                    }
 
-            if not vix_hist.empty:
-                current_vix = vix_hist['Close'].iloc[-1]
-                sentiment_data["vix"] = {
-                    "value": round(float(current_vix), 2),
-                    "interpretation": self._interpret_vix(current_vix)
-                }
-        except Exception as e:
-            print(f"Error fetching VIX: {e}")
+                # Fetch MMI (Market Momentum Index)
+                mmi = await self.indian_market.calculate_mmi()
+                if mmi:
+                    sentiment_data["mmi"] = {
+                        "value": mmi,
+                        "interpretation": self.indian_market._interpret_mmi(mmi)
+                    }
+
+        # For US stocks - fetch VIX
+        if asset_class in ["stock", "index"] and not sentiment_data.get("india_vix"):
+            try:
+                import yfinance as yf
+                vix = yf.Ticker("^VIX")
+                vix_hist = vix.history(period="1d")
+
+                if not vix_hist.empty:
+                    current_vix = vix_hist['Close'].iloc[-1]
+                    sentiment_data["vix"] = {
+                        "value": round(float(current_vix), 2),
+                        "interpretation": self._interpret_vix(current_vix)
+                    }
+                    print(f"✓ US VIX: {current_vix:.2f}")
+            except Exception as e:
+                print(f"Error fetching VIX: {e}")
 
         return sentiment_data if sentiment_data else None
 
@@ -295,10 +297,10 @@ class ContextAggregator:
         """Parallel Data Fetch using asyncio.gather"""
         tasks = [
             self.fetch_market_data(signal.asset, signal.assetClass),
-            self.fetch_news_data(signal.asset),
+            self.fetch_news_data(signal.asset, signal.assetClass),
             self.fetch_economic_calendar(),
             self.fetch_portfolio_state(),
-            self.fetch_sentiment_data()
+            self.fetch_sentiment_data(signal.assetClass)
         ]
 
         results = await asyncio.gather(*tasks)
