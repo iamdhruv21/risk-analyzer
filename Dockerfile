@@ -25,4 +25,4 @@ COPY . .
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Run your script
-CMD ["uv", "run", "main.py"]
+CMD ["uv", "run", "docker_entrypoint.py"]
