@@ -12,18 +12,18 @@ from src.agents.synthesis_agent import RiskSynthesisAgent
 from src.services.audit_logger import AuditLogger
 
 class RiskAnalyzer:
-    def __init__(self):
+    def __init__(self, source_filename: str = None):
         self.aggregator = ContextAggregator()
         self.rule_engine = RuleEngine()
         self.decision_gate = DecisionGate()
-        
+
         self.tech_agent = TechnicalAgent()
         self.sent_agent = SentimentAgent()
         self.metrics_agent = MetricsAgent()
         self.vol_agent = VolatilityAgent()
 
         self.synthesis_agent = RiskSynthesisAgent()
-        self.audit_logger = AuditLogger()
+        self.audit_logger = AuditLogger(source_filename=source_filename)
 
     async def analyze(self, result_json: dict):
         """
@@ -48,7 +48,8 @@ class RiskAnalyzer:
         print(f"\n--- Layer 1: Aggregating Market Context ---")
         async with self.aggregator as aggregator:
             context = await aggregator.aggregate_all_context(signal)
-            print(f"Context aggregated from {context.market_data.get('source')}")
+            source = context.market_data.get('source') if context.market_data else 'no_source'
+            print(f"Context aggregated from {source}")
 
         # Layer 2: Fast Rule Engine (Deterministic Gate)
         print(f"\n--- Layer 2: Executing Fast Rules ---")

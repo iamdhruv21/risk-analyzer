@@ -19,8 +19,10 @@ import sys
 import json
 import asyncio
 import re
+import shutil
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 from src.parsers import WaterfallParser
 from src.analyzer import RiskAnalyzer
@@ -29,9 +31,10 @@ from src.analyzer import RiskAnalyzer
 class ArgusRiskAnalysis:
     """Main application orchestrator"""
 
-    def __init__(self):
+    def __init__(self, source_filename: str = None):
         self.parser = WaterfallParser()
-        self.analyzer = RiskAnalyzer()
+        self.analyzer = RiskAnalyzer(source_filename=source_filename)
+        self.source_filename = source_filename
 
     def parse_signal_from_text(self, text: str) -> Optional[dict]:
         """Parse trading signal from raw text - output format ready for risk analysis"""
@@ -154,13 +157,13 @@ class ArgusRiskAnalysis:
 
         if results:
             print("\nNext steps:")
-            print("1. Review decisions in audit_log.jsonl")
+            print("1. Review decisions in output/ folder")
             print("2. Execute trades if approved")
             print("3. Provide feedback after execution:")
             print(f"   uv run feedback_cli.py <trade_id>")
 
 
-def interactive_mode():
+async def interactive_mode():
     """Interactive mode for entering signals"""
     print("\n" + "="*80)
     print("INTERACTIVE MODE")
@@ -187,8 +190,8 @@ def interactive_mode():
         print("No input provided.")
         return
 
-    app = ArgusRiskAnalysis()
-    result = asyncio.run(app.process_text_signal(signal_text))
+    app = ArgusRiskAnalysis(source_filename="interactive_input")
+    result = await app.process_text_signal(signal_text)
 
     if result:
         print("\n" + "="*80)
@@ -202,7 +205,7 @@ def interactive_mode():
         print("\n❌ Analysis failed")
 
 
-def example_mode():
+async def example_mode():
     """Run with example signal"""
     example_signal = """BTC Buy 65000
 TP 68000
@@ -214,8 +217,8 @@ Leverage 10x"""
     print("="*80)
     print(f"\nProcessing example signal:\n{example_signal}\n")
 
-    app = ArgusRiskAnalysis()
-    result = asyncio.run(app.process_text_signal(example_signal))
+    app = ArgusRiskAnalysis(source_filename="example_signal")
+    result = await app.process_text_signal(example_signal)
 
     if result:
         print("\n" + "="*80)
@@ -227,43 +230,89 @@ Leverage 10x"""
         print("\n❌ Example failed")
 
 
+def get_first_file_from_input() -> Optional[Path]:
+    """Get the first file from input folder"""
+    input_dir = Path("input")
+    input_dir.mkdir(exist_ok=True)
+
+    # Get all files (not directories, not hidden files)
+    files = [f for f in input_dir.iterdir() if f.is_file() and not f.name.startswith('.')]
+
+    if not files:
+        return None
+
+    # Return first file (sorted alphabetically)
+    return sorted(files)[0]
+
+
+def move_to_completed(file_path: Path):
+    """Move processed file to completed folder"""
+    completed_dir = Path("completed")
+    completed_dir.mkdir(exist_ok=True)
+
+    # Generate destination filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest_filename = f"{file_path.stem}_{timestamp}{file_path.suffix}"
+    dest_path = completed_dir / dest_filename
+
+    shutil.move(str(file_path), str(dest_path))
+    print(f"\n✓ Moved processed file to: {dest_path}")
+
+
 async def main():
     """Main entry point"""
-    if len(sys.argv) < 2:
-        print("\n" + "="*80)
-        print("ARGUS RISK ANALYSIS SYSTEM")
-        print("="*80)
+    # Check if any arguments provided
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+
+        if arg == "--interactive":
+            await interactive_mode()
+            return
+
+        if arg == "--example":
+            await example_mode()
+            return
+
+        # Process specific file (old behavior)
+        file_path = arg
+        app = ArgusRiskAnalysis(source_filename=Path(file_path).name)
+        results = await app.process_file(file_path)
+        app.print_summary(results)
+        return
+
+    # No arguments - check input folder
+    print("\n" + "="*80)
+    print("ARGUS RISK ANALYSIS SYSTEM - AUTO MODE")
+    print("="*80)
+    print("\nChecking input folder for files...")
+
+    input_file = get_first_file_from_input()
+
+    if not input_file:
+        print("\n✗ No files to process in input folder")
         print("\nUsage:")
-        print("  uv run main.py <signal_file.txt>     # Process file")
+        print("  uv run main.py                       # Auto-process from input folder")
+        print("  uv run main.py <signal_file.txt>     # Process specific file")
         print("  uv run main.py --interactive         # Interactive input")
         print("  uv run main.py --example             # Run example")
-        print("\nExamples:")
-        print("  uv run main.py example_signal.txt")
-        print("  uv run main.py signals.txt")
-        print("  uv run main.py --interactive")
-        print("  uv run main.py --example")
-        print("\nFeedback:")
-        print("  uv run feedback_cli.py               # List recent trades")
-        print("  uv run feedback_cli.py <trade_id>    # Submit feedback")
-        print("  uv run feedback_query.py summary     # View statistics")
+        print("\nTo process files automatically:")
+        print("  1. Place signal files in the 'input' folder")
+        print("  2. Run: uv run main.py")
+        print("  3. Results will be in 'output' folder")
+        print("  4. Processed files moved to 'completed' folder")
         print()
-        sys.exit(1)
-
-    arg = sys.argv[1]
-
-    if arg == "--interactive":
-        interactive_mode()
         return
 
-    if arg == "--example":
-        example_mode()
-        return
+    print(f"\n✓ Found file: {input_file.name}")
 
-    # Process file
-    file_path = arg
-    app = ArgusRiskAnalysis()
-    results = await app.process_file(file_path)
+    # Process the file
+    app = ArgusRiskAnalysis(source_filename=input_file.name)
+    results = await app.process_file(str(input_file))
     app.print_summary(results)
+
+    # Move to completed folder
+    if results:
+        move_to_completed(input_file)
 
 if __name__ == "__main__":
     asyncio.run(main())

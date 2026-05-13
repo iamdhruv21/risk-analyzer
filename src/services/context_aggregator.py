@@ -32,28 +32,119 @@ class ContextAggregator:
         if self.exchange:
             await self.exchange.close()
 
-    async def fetch_market_data(self, asset: str) -> Dict[str, Any] | None:
-        """Fetch live market data from Binance. Returns None if API keys are not configured or request fails."""
-        if not self.exchange or not self.binance_key or self.binance_key == "your_api_key_here":
-            print(f"Binance API keys not configured. Cannot fetch market data for {asset}")
-            return None
+    def _get_yfinance_symbol(self, asset: str, asset_class: str) -> str:
+        """Map asset to Yahoo Finance symbol"""
+        # Indian Indices
+        if asset.upper() == "NIFTY":
+            return "^NSEI"
+        elif asset.upper() == "SENSEX":
+            return "^BSESN"
+        elif asset.upper() == "BANKNIFTY":
+            return "^NSEBANK"
 
+        # Commodities
+        elif asset.upper() == "GOLD":
+            return "GC=F"  # Gold Futures
+        elif asset.upper() == "SILVER":
+            return "SI=F"  # Silver Futures
+        elif asset.upper() == "CRUDE" or asset.upper() == "OIL":
+            return "CL=F"  # Crude Oil Futures
+
+        # Indian Stocks - append .NS for NSE or .BO for BSE
+        elif asset_class == "stock":
+            # If asset already has exchange suffix, use as is
+            if asset.endswith('.NS') or asset.endswith('.BO'):
+                return asset
+            # Default to NSE
+            return f"{asset}.NS"
+
+        # Default: return as is for other assets
+        return asset
+
+    async def fetch_market_data_yfinance(self, asset: str, asset_class: str) -> Dict[str, Any] | None:
+        """Fetch market data from Yahoo Finance (for Indian stocks, indices, commodities)"""
         try:
-            symbol = f"{asset}/USDT"
-            ticker = await self.exchange.fetch_ticker(symbol)
-            ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe='1h', limit=20)
+            import yfinance as yf
+            import pandas_ta as ta
+
+            symbol = self._get_yfinance_symbol(asset, asset_class)
+            ticker = yf.Ticker(symbol)
+
+            # Get current data
+            info = ticker.info
+            hist = ticker.history(period="1mo", interval="1h")
+
+            if hist.empty:
+                print(f"No historical data available for {asset} ({symbol})")
+                return None
+
+            current_price = hist['Close'].iloc[-1]
+
+            # Calculate ATR (14-period)
+            hist_with_atr = hist.copy()
+            hist_with_atr.ta.atr(length=14, append=True)
+            atr_14 = hist_with_atr[f'ATRr_14'].iloc[-1] if f'ATRr_14' in hist_with_atr.columns else 0
+
+            # Convert DataFrame to list for OHLCV - add timestamp as first column
+            # Format: [timestamp, open, high, low, close, volume]
+            ohlcv = []
+            for idx, row in hist.iterrows():
+                ohlcv.append([
+                    int(idx.timestamp() * 1000),  # timestamp in milliseconds
+                    float(row['Open']),
+                    float(row['High']),
+                    float(row['Low']),
+                    float(row['Close']),
+                    float(row['Volume'])
+                ])
 
             return {
-                "current_price": ticker['last'],
-                "high_24h": ticker['high'],
-                "low_24h": ticker['low'],
-                "volume_24h": ticker['baseVolume'],
+                "current_price": float(current_price),
+                "high_24h": float(hist['High'].tail(24).max()) if len(hist) >= 24 else float(hist['High'].max()),
+                "low_24h": float(hist['Low'].tail(24).min()) if len(hist) >= 24 else float(hist['Low'].min()),
+                "volume_24h": float(hist['Volume'].tail(24).sum()) if len(hist) >= 24 else float(hist['Volume'].sum()),
+                "atr_14": float(atr_14) if atr_14 else 0,
                 "ohlcv": ohlcv,
-                "source": "live_binance"
+                "source": "yfinance",
+                "symbol": symbol
             }
         except Exception as e:
-            print(f"Error fetching live Binance data for {asset}: {e}")
+            print(f"Error fetching Yahoo Finance data for {asset}: {e}")
             return None
+
+    async def fetch_market_data(self, asset: str, asset_class: str = "crypto") -> Dict[str, Any] | None:
+        """
+        Fetch live market data from appropriate source based on asset class.
+
+        Crypto: Binance
+        Stocks/Indices/Commodities: Yahoo Finance
+        """
+        # For crypto, try Binance first
+        if asset_class == "crypto":
+            if not self.exchange or not self.binance_key or self.binance_key == "your_api_key_here":
+                print(f"Binance API keys not configured. Cannot fetch market data for {asset}")
+                return None
+
+            try:
+                symbol = f"{asset}/USDT"
+                ticker = await self.exchange.fetch_ticker(symbol)
+                ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe='1h', limit=20)
+
+                return {
+                    "current_price": ticker['last'],
+                    "high_24h": ticker['high'],
+                    "low_24h": ticker['low'],
+                    "volume_24h": ticker['baseVolume'],
+                    "ohlcv": ohlcv,
+                    "source": "live_binance"
+                }
+            except Exception as e:
+                print(f"Error fetching live Binance data for {asset}: {e}")
+                return None
+
+        # For stocks, indices, and commodities, use Yahoo Finance
+        else:
+            return await self.fetch_market_data_yfinance(asset, asset_class)
 
     async def fetch_news_data(self, asset: str) -> list | None:
         """Fetch live headlines and sentiment from Alpha Vantage. Returns None if API key is not configured or request fails."""
@@ -101,23 +192,46 @@ class ContextAggregator:
         return None
 
     async def fetch_portfolio_state(self) -> Dict[str, Any] | None:
-        """Fetch live account balance from Binance. Returns None if API keys are not configured or request fails."""
-        if not self.exchange or not self.binance_key or self.binance_key == "your_api_key_here":
-            print("Binance API keys not configured. Cannot fetch portfolio state.")
-            return None
+        """
+        Fetch live account balance.
 
-        try:
-            balance = await self.exchange.fetch_balance()
-            usdt_balance = balance.get('USDT', {})
+        For crypto: Binance
+        For stocks: Can integrate with Groww API or other broker APIs
 
-            return {
-                "equity": usdt_balance.get('total', 0.0),
-                "free": usdt_balance.get('free', 0.0),
-                "source": "live_binance"
-            }
-        except Exception as e:
-            print(f"Error fetching Binance balance: {e}")
-            return None
+        Note: You need to configure portfolio equity in .env if not using live broker APIs
+        """
+        # Try Binance for crypto portfolio
+        if self.exchange and self.binance_key and self.binance_key != "your_api_key_here":
+            try:
+                balance = await self.exchange.fetch_balance()
+                usdt_balance = balance.get('USDT', {})
+
+                return {
+                    "equity": usdt_balance.get('total', 0.0),
+                    "free": usdt_balance.get('free', 0.0),
+                    "source": "live_binance",
+                    "daily_drawdown": 0.0  # You need to track this separately
+                }
+            except Exception as e:
+                print(f"Error fetching Binance balance: {e}")
+
+        # Fallback: Use configured portfolio value from .env
+        portfolio_equity = os.getenv("PORTFOLIO_EQUITY")
+        if portfolio_equity:
+            try:
+                equity_value = float(portfolio_equity)
+                print(f"Using configured portfolio equity: {equity_value}")
+                return {
+                    "equity": equity_value,
+                    "free": equity_value,
+                    "source": "configured",
+                    "daily_drawdown": 0.0
+                }
+            except ValueError:
+                print(f"Invalid PORTFOLIO_EQUITY value in .env: {portfolio_equity}")
+
+        print("Portfolio state unavailable. Configure PORTFOLIO_EQUITY in .env or setup broker API.")
+        return None
 
     async def fetch_sentiment_data(self) -> Dict[str, Any] | None:
         """
@@ -180,15 +294,15 @@ class ContextAggregator:
     async def aggregate_all_context(self, signal: TradeSignal) -> RiskContext:
         """Parallel Data Fetch using asyncio.gather"""
         tasks = [
-            self.fetch_market_data(signal.asset),
+            self.fetch_market_data(signal.asset, signal.assetClass),
             self.fetch_news_data(signal.asset),
             self.fetch_economic_calendar(),
             self.fetch_portfolio_state(),
             self.fetch_sentiment_data()
         ]
-        
+
         results = await asyncio.gather(*tasks)
-        
+
         return RiskContext(
             market_data=results[0],
             news_data=results[1],

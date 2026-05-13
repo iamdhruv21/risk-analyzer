@@ -15,6 +15,13 @@ class RuleEngine:
         Executes Layer 2 Deterministic Gates.
         Returns a dict with 'pass': bool and 'reason': str if failed.
         """
+        # Check if we have required context data
+        if not context.market_data:
+            return {"pass": False, "reason": "Market data unavailable - cannot perform risk analysis"}
+
+        if not context.portfolio_state:
+            return {"pass": False, "reason": "Portfolio data unavailable - cannot calculate position sizing"}
+
         equity = context.portfolio_state.get("equity", 0.0)
         atr = context.market_data.get("atr_14", 0.0)
         daily_drawdown = context.portfolio_state.get("daily_drawdown", 0.0)

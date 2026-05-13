@@ -1,4 +1,3 @@
-.env
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -20,6 +19,15 @@ audit_log.jsonl
 feedback_log.jsonl
 *.json
 !pyproject.toml
+
+# Processing folders
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+completed/*
+!completed/.gitkeep
+logs
 
 # Environment
 .env

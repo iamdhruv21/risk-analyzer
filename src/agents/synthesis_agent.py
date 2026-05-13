@@ -2,14 +2,27 @@ import os
 import json
 from typing import Dict, Any
 from anthropic import AsyncAnthropic
+from groq import AsyncGroq
 from src.models.signal import TradeSignal, RiskContext
 
 class RiskSynthesisAgent:
     """Layer 4: Risk Synthesis Engine (LLM Orchestration)"""
-    
+
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        self.model = "claude-3-5-sonnet-20241022"
+        self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        self.groq_key = os.getenv("GROQ_API_KEY")
+
+        if self.anthropic_key and self.anthropic_key != "your_anthropic_key_here":
+            self.client = AsyncAnthropic(api_key=self.anthropic_key)
+            self.model = "claude-3-5-sonnet-20241022"
+            self.provider = "anthropic"
+        elif self.groq_key:
+            self.client = AsyncGroq(api_key=self.groq_key)
+            self.model = os.getenv("GROQ_MODEL_NAME", "llama-3.3-70b-versatile")
+            self.provider = "groq"
+        else:
+            self.client = None
+            self.provider = "fallback"
 
     async def synthesize(self, signal: TradeSignal, agent_reports: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -38,27 +51,27 @@ class RiskSynthesisAgent:
                 "warnings": [f"Invalid/missing scores from: {', '.join(invalid_scores)}"]
             }
 
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key or api_key == "your_anthropic_key_here":
+        # Fallback to weighted average if no LLM provider available
+        if self.provider == "fallback":
             weights = {"technical": 0.3, "metrics": 0.3, "volatility": 0.25, "sentiment": 0.15}
             score = sum(agent_reports[k]["score"] * weights[k] for k in weights if k in agent_reports)
             return {
                 "composite_score": round(score, 2),
-                "rationale": "Fallback: Weighted average used (Anthropic API key missing).",
-                "warnings": ["LLM Synthesis skipped - API key not configured."]
+                "rationale": "Fallback: Weighted average used (No API keys configured).",
+                "warnings": ["LLM Synthesis skipped - No API keys configured."]
             }
 
         system_prompt = """
-        You are a Senior Risk Manager at a top-tier hedge fund. 
+        You are a Senior Risk Manager at a top-tier hedge fund.
         Your task is to synthesize four specialized risk reports into a single, unified trade decision.
-        
+
         Input:
         1. Trade Signal (Asset, Type, Price, TP, SL, Leverage)
         2. Technical Analysis Report (Score + Indicators)
         3. Sentiment & News Report (Score + News Context)
         4. Trade Metrics Report (R:R, Liquidation Risk)
         5. Volatility & Regime Report (Market Environment)
-        
+
         Guidelines:
         - Weighting (Internal Guide): Technical (30%), Metrics (30%), Volatility (25%), Sentiment (15%).
         - Look for contradictions (e.g., strong technical score but high-impact news event).
@@ -68,10 +81,10 @@ class RiskSynthesisAgent:
 
         user_content = f"""
         Analyze this trade and provide a unified risk assessment.
-        
+
         SIGNAL: {signal.model_dump_json()}
         REPORTS: {json.dumps(agent_reports)}
-        
+
         Required JSON Output Format:
         {{
             "composite_score": 0-100,
@@ -85,26 +98,40 @@ class RiskSynthesisAgent:
         """
 
         try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=1000,
-                temperature=0,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_content}]
-            )
-            
+            if self.provider == "anthropic":
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1000,
+                    temperature=0,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_content}]
+                )
+                content = response.content[0].text
+            elif self.provider == "groq":
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    max_tokens=1000,
+                    temperature=0
+                )
+                content = response.choices[0].message.content
+
             # Extract JSON from response
-            content = response.content[0].text
-            # Basic JSON extraction in case Claude adds markdown
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
-            
-            return json.loads(content)
-            
+
+            result = json.loads(content)
+            result["synthesis_provider"] = self.provider
+            return result
+
         except Exception as e:
-            print(f"Error in LLM Synthesis: {e}")
+            print(f"Error in LLM Synthesis ({self.provider}): {e}")
             return {
                 "composite_score": 50,
-                "rationale": f"LLM synthesis failed: {str(e)}",
-                "warnings": ["Synthesis Error"]
+                "rationale": f"LLM synthesis failed ({self.provider}): {str(e)}",
+                "warnings": ["Synthesis Error"],
+                "synthesis_provider": f"{self.provider}_error"
             }
