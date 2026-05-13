@@ -10,9 +10,9 @@ It handles:
 4. Decision output
 
 Usage:
-    python main.py <signal_file.txt>
-    python main.py --interactive
-    python main.py --example
+    uv run main.py <signal_file.txt>
+    uv run main.py --interactive
+    uv run main.py --example
 """
 
 import sys
@@ -157,7 +157,7 @@ class ArgusRiskAnalysis:
             print("1. Review decisions in audit_log.jsonl")
             print("2. Execute trades if approved")
             print("3. Provide feedback after execution:")
-            print(f"   python feedback_cli.py <trade_id>")
+            print(f"   uv run feedback_cli.py <trade_id>")
 
 
 def interactive_mode():

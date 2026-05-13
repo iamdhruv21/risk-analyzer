@@ -202,11 +202,11 @@ def main():
 
     if len(sys.argv) < 2:
         print("\nUsage:")
-        print("  python feedback_query.py summary                    # Show aggregate statistics")
-        print("  python feedback_query.py outcome <OUTCOME>          # Query by outcome (SUCCESS, FAILURE, etc.)")
-        print("  python feedback_query.py incorrect                  # Show incorrect decisions")
-        print("  python feedback_query.py trade <trade_id>           # Show feedback for specific trade")
-        print("  python feedback_query.py export <output_file.json>  # Export training data")
+        print("  uv run feedback_query.py summary                    # Show aggregate statistics")
+        print("  uv run feedback_query.py outcome <OUTCOME>          # Query by outcome (SUCCESS, FAILURE, etc.)")
+        print("  uv run feedback_query.py incorrect                  # Show incorrect decisions")
+        print("  uv run feedback_query.py trade <trade_id>           # Show feedback for specific trade")
+        print("  uv run feedback_query.py export <output_file.json>  # Export training data")
         print()
         sys.exit(1)
 
